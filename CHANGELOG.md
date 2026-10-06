@@ -1,0 +1,21 @@
+# Cambios
+
+## 0.1.0
+
+Primera versión, a partir del render de carpinteria-online.
+
+- `createEngine(container, { preset, area, fov, controls, pixelRatio })`: renderer, escena,
+  cámara, OrbitControls y el estudio (luz hemisférica, sol con sombras, entorno, piso, grilla,
+  niebla), todo escalado con `area`.
+- Presets `studio`, `warm` y `dark`; `setPreset`, `tweak`, `definePreset` y `{ extends }`.
+- `show({ grid, floor, sky, fog, shadows })`: prender y apagar partes del estudio. Cielo
+  degradé como fondo.
+- `select(objects, { detail })`: contorno de selección (OutlinePass con blending para color
+  premultiplicado) y, con `detail`, una línea fina por objeto.
+- `edges({ … })`: contorno fino de geometría (profundidad + normales, 1px, color del material
+  oscurecido). Respeta `userData.noEdge`.
+- Modos de vista: `render`, `clay`, `wireframe`, `normals`, `matcap`.
+- `frame()`, `snapshot()`, `onFrame()`, `overlay` (gizmos fuera del post-proceso), `dispose()`.
+- `render({ samples, width, height, bounces, camera, onProgress, signal })`: path tracing con
+  three-gpu-pathtracer (cargado a pedido) a un PNG. Respeta `userData.noRender`.
+- `help()`, con una prueba que exige que la tabla y la API coincidan.

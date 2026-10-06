@@ -1,0 +1,27 @@
+{
+  "name": "threejs-render-engine",
+  "version": "0.1.0",
+  "description": "Cómo se ve una escena de three.js: estudio (luces, sombras, cielo, piso, grilla) por presets, contorno de selección, contorno fino de geometría, modos de vista y render final con path tracing en un click.",
+  "type": "module",
+  "license": "MIT",
+  "author": "EasyIndustry",
+  "repository": { "type": "git", "url": "git+https://github.com/EasyIndustry/threejs-render-engine.git" },
+  "exports": {
+    ".": "./src/index.js",
+    "./presets": "./src/presets.js"
+  },
+  "files": ["src", "examples", "LICENSE", "README.md"],
+  "scripts": {
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "three": ">=0.160.0",
+    "three-gpu-pathtracer": ">=0.0.23",
+    "three-mesh-bvh": ">=0.7.4"
+  },
+  "peerDependenciesMeta": {
+    "three-gpu-pathtracer": { "optional": true },
+    "three-mesh-bvh": { "optional": true }
+  },
+  "engines": { "node": ">=20" }
+}
