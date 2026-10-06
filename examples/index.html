@@ -42,7 +42,8 @@
     const motor = createEngine(document.body, { preset: 'studio', area: 250 });
     const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, ...extra });
     const piezas = [
-      new THREE.Mesh(new THREE.BoxGeometry(60, 3, 40), mat('#c8a27a')),
+      // un material por cara: el caso de varios materiales en una malla (ver porGrupo en pathtracer.js)
+      new THREE.Mesh(new THREE.BoxGeometry(60, 3, 40), ['#b9895c', '#b9895c', '#d8b48a', '#7a5636', '#c8a27a', '#c8a27a'].map((c) => mat(c))),
       new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 30, 48), mat('#5d7fa3', { metalness: 0.6, roughness: 0.25 })),
       new THREE.Mesh(new THREE.TorusKnotGeometry(8, 2.6, 160, 24), mat('#c9743f', { roughness: 0.3 })),
     ];

@@ -30,6 +30,45 @@ const cargar = () => (modulo ??= import('three-gpu-pathtracer').catch((e) => {
 const cuadro = () => new Promise((r) => requestAnimationFrame(() => r(undefined)));
 
 /**
+ * Una malla con varios materiales, partida en una malla por grupo, cada una con su material.
+ * three-gpu-pathtracer (hasta la 0.0.23 al menos) numera los grupos de la escena junta por
+ * malla pero despliega los arrays de materiales, así que una malla con varios materiales corre
+ * los índices de todas las que vienen después: una pieza toma el material de otra. De a una
+ * por grupo, cada malla tiene un solo material y la cuenta da.
+ * Devuelve null si no hace falta (o no se puede: atributos intercalados).
+ * @param {THREE.Mesh} o
+ */
+function porGrupo(o) {
+  const mats = /** @type {THREE.Material[]} */ (o.material);
+  const g = o.geometry;
+  if (Object.values(g.attributes).some((a) => /** @type {any} */ (a).isInterleavedBufferAttribute)) return null;
+  const total = g.index ? g.index.count : g.attributes.position.count;
+  const grupos = g.groups.length ? g.groups : [{ start: 0, count: total, materialIndex: 0 }];
+  /** @type {THREE.Mesh[]} */
+  const partes = [];
+  for (const gr of grupos) {
+    const mat = mats[gr.materialIndex ?? 0];
+    if (!mat) continue;
+    const fin = Math.min(total, gr.start + gr.count);
+    const sub = new THREE.BufferGeometry();
+    if (g.index) {
+      for (const [k, a] of Object.entries(g.attributes)) sub.setAttribute(k, a);
+      sub.setIndex(new THREE.BufferAttribute(g.index.array.slice(gr.start, fin), 1));
+    } else {
+      for (const [k, a] of Object.entries(g.attributes)) {
+        const ba = /** @type {THREE.BufferAttribute} */ (a);
+        sub.setAttribute(k, new THREE.BufferAttribute(ba.array.slice(gr.start * ba.itemSize, fin * ba.itemSize), ba.itemSize, ba.normalized));
+      }
+    }
+    const m = new THREE.Mesh(sub, mat);
+    m.matrixAutoUpdate = false;
+    m.matrix.copy(o.matrixWorld);
+    partes.push(m);
+  }
+  return partes;
+}
+
+/**
  * @param {{ scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, preset: () => Preset }} ctx
  * @param {RenderOptions} [opts]
  * @returns {Promise<Blob>}
@@ -69,12 +108,30 @@ export async function pathTrace(ctx, opts = {}) {
 
   // la escena se toma como está; lo que no va a la imagen se esconde solo mientras se arma
   const antes = { environment: scene.environment, intensity: scene.environmentIntensity, fog: scene.fog };
+  scene.updateMatrixWorld(true);
   /** @type {THREE.Object3D[]} */
   const escondidos = [];
+  /** @type {THREE.Mesh[]} */
+  const multis = [];
   scene.traverse((o) => {
     const fuera = o.userData.noRender || /** @type {any} */ (o).isLine || /** @type {any} */ (o).isPoints || /** @type {any} */ (o).isSprite;
-    if (fuera && o.visible) { o.visible = false; escondidos.push(o); }
+    if (fuera && o.visible) { o.visible = false; escondidos.push(o); return; }
+    const mesh = /** @type {THREE.Mesh} */ (o);
+    if (mesh.isMesh && o.visible && Array.isArray(mesh.material)) multis.push(mesh);
   });
+  // las de varios materiales, de a una por grupo (ver porGrupo), en un grupo temporal
+  const reemplazos = new THREE.Group();
+  for (const m of multis) {
+    let visible = true;
+    for (let n = /** @type {THREE.Object3D | null} */ (m); n; n = n.parent) visible &&= n.visible;
+    if (!visible) continue;
+    const partes = porGrupo(m);
+    if (!partes) continue;
+    m.visible = false;
+    escondidos.push(m);
+    reemplazos.add(...partes);
+  }
+  if (reemplazos.children.length) scene.add(reemplazos);
   scene.environment = cielo;
   scene.environmentIntensity = p.render.environmentIntensity;
   scene.fog = null;
@@ -82,6 +139,9 @@ export async function pathTrace(ctx, opts = {}) {
     // síncrono: setSceneAsync pide un worker de BVH aparte, y para un render a pedido no vale la pena
     tracer.setScene(scene, camera);
   } finally {
+    scene.remove(reemplazos);
+    // solo la geometría propia de cada parte: los atributos son los de la malla original
+    for (const p of /** @type {THREE.Mesh[]} */ (reemplazos.children)) p.geometry.dispose();
     for (const o of escondidos) o.visible = true;
     scene.environment = antes.environment;
     scene.environmentIntensity = antes.intensity;

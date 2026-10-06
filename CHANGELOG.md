@@ -1,5 +1,14 @@
 # Cambios
 
+## 0.1.1
+
+- `render()`: las mallas con varios materiales salen bien. three-gpu-pathtracer 0.0.23 numera
+  los grupos de la escena junta por malla pero despliega los arrays de materiales, así que una
+  malla con varios materiales corría los índices de las siguientes (una pieza tomaba el
+  material de otra, el piso la madera de la tapa). Durante el render, cada una se parte en una
+  malla por grupo, con un solo material, y después se restaura.
+- El ejemplo tiene una malla con un material por cara, que reproduce el caso.
+
 ## 0.1.0
 
 Primera versión, a partir del render de carpinteria-online.
