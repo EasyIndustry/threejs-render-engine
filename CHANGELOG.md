@@ -1,5 +1,13 @@
 # Cambios
 
+## 0.2.1
+
+- `resolution('auto')` no oscila: con vsync no se puede medir cuánto margen sobra, solo si se
+  llega o no, así que subía hasta pasarse, bajaba y otra vez. Ahora, al bajar, calcula la
+  escala que llega justo y no la pasa por un rato (`memory`, unos 10 s); si una prueba de subir
+  falla, la próxima espera el doble (hasta 8 veces). Umbrales más ajustados: baja si el cuadro
+  pasa el presupuesto en más de 10 %, considera estable hasta 4 %.
+
 ## 0.2.0
 
 - `resolution(value, { min, max, fps })`: con cuántos píxeles se dibuja el visor, en vivo. Un

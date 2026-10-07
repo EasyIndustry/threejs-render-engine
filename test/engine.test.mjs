@@ -102,6 +102,18 @@ test('resolución automática: sube despacio solo si estuvo estable varias medic
   assert.equal(a.scale, 1); // no pasa del máximo
 });
 
+test('resolución automática: recuerda el techo y no oscila; pasado un rato vuelve a probar', () => {
+  // una "placa" cuyo cuadro tarda según los píxeles: a escala s, 25 ms × s² (con vsync, nunca menos de 16.7)
+  const a = createAutoScale({ fps: 60, memory: 20 });
+  const cuadro = () => Math.max(16.7, 25 * a.scale * a.scale);
+  const escalas = [];
+  // 60 mediciones ≈ 30 s: baja una vez al principio y después prueba subir pocas veces, cada vez más espaciadas
+  for (let i = 0; i < 30 * 60; i++) { a.sample(cuadro()); if (i % 30 === 29) escalas.push(a.scale); }
+  const lentas = escalas.filter((s) => 25 * s * s > 16.7 * 1.1).length;
+  assert.ok(lentas <= 3, `se pasó del presupuesto ${lentas} veces: ${escalas.join(' ')}`);
+  assert.ok(a.scale >= 0.78 && a.scale <= 0.84, `se acomodó en ${a.scale}`);
+});
+
 test('resolución automática: un tirón suelto no la baja, una pausa larga no cuenta', () => {
   const a = createAutoScale({ fps: 60 });
   for (let i = 0; i < 29; i++) a.sample(16.7);

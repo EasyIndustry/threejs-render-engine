@@ -1,6 +1,6 @@
 {
   "name": "threejs-render-engine",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Cómo se ve una escena de three.js: estudio (luces, sombras, cielo, piso, grilla) por presets, contorno de selección, contorno fino de geometría, modos de vista y render final con path tracing en un click.",
   "type": "module",
   "license": "MIT",
