@@ -19,6 +19,7 @@ export const ENGINE_MEMBERS = [
   ['selected', 'lo que está seleccionado'],
   ['show({ grid?, floor?, sky?, fog?, shadows? })', 'prender o apagar partes del estudio sin cambiar de preset; sin argumentos, cómo está'],
   ['edges({ enabled?, normalThreshold?, depthThreshold?, darken? })', 'contorno fino de geometría; sin argumentos, cómo está'],
+  ['bloom({ enabled?, strength?, radius?, threshold? })', 'el bloom: lo que pasa de threshold se derrama (emisivos, reflejos fuertes); sin argumentos, cómo está'],
   ['frame(objects?)', 'encuadrar la cámara en unos objetos, o en todo'],
   ['snapshot({ width?, height?, type?, quality? })', 'una foto rápida del visor, como data URL'],
   ['render({ samples?, width?, height?, bounces?, camera?, onProgress?, signal?, type? })', 'el render final con path tracing: una Promise de la imagen (Blob)'],

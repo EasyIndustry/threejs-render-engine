@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.3.0
+
+- Bloom (`UnrealBloomPass`): lo que pasa de `threshold` en lineal (un emisivo con intensidad
+  mayor que 1, un reflejo fuerte) se derrama alrededor. Sección `bloom` en los presets (apagado
+  por defecto) y `motor.bloom({ enabled, strength, radius, threshold })`. Va antes de los
+  contornos, para que la selección no brille.
+
 ## 0.2.1
 
 - `resolution('auto')` no oscila: con vsync no se puede medir cuánto margen sobra, solo si se

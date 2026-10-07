@@ -21,6 +21,7 @@
  *   grid: { color: string, opacity: number, divisions: number } | null,
  *   selection: { color: string, strength: number, thickness: number, detailStrength: number, detailThickness: number },
  *   edges: { enabled: boolean, normalThreshold: number, depthThreshold: number, darken: number },
+ *   bloom: { enabled: boolean, strength: number, radius: number, threshold: number },
  *   render: { samples: number, bounces: number, sky: string, ground: string, environmentIntensity: number },
  * }} Preset
  */
@@ -38,6 +39,7 @@ const STUDIO = {
   grid: { color: '#9a9aa2', opacity: 0.25, divisions: 28 },
   selection: { color: '#2f6fd6', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
+  bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
   render: { samples: 256, bounces: 5, sky: '#ffffff', ground: '#9a9aa2', environmentIntensity: 1 },
 };
 
@@ -54,6 +56,7 @@ const WARM = {
   grid: { color: '#a87b58', opacity: 0.22, divisions: 28 },
   selection: { color: '#a84a1f', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
+  bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
   render: { samples: 256, bounces: 5, sky: '#fff6ea', ground: '#b8987a', environmentIntensity: 1 },
 };
 
@@ -70,6 +73,7 @@ const DARK = {
   grid: { color: '#4a4248', opacity: 0.5, divisions: 28 },
   selection: { color: '#e2984f', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
+  bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
   render: { samples: 256, bounces: 5, sky: '#3a3f4a', ground: '#0c0c0f', environmentIntensity: 1 },
 };
 

@@ -18,6 +18,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { PRESETS, resolvePreset, mergePreset, definePreset } from './presets.js';
 import { createEdgePass } from './edges.js';
 import { pathTrace } from './pathtracer.js';
@@ -114,6 +115,11 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   composer.addPass(new RenderPass(scene, camera));
   const edgePass = createEdgePass(renderer, scene, camera);
   composer.addPass(edgePass);
+  // bloom: lo que pasa de `threshold` (en lineal: un emisivo con intensidad > 1, un reflejo del
+  // sol) se derrama alrededor. Antes de los contornos, para que la selección no brille.
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(w0, h0), 0.8, 0.4, 0.9);
+  bloomPass.enabled = false;
+  composer.addPass(bloomPass);
 
   /** @param {number} strength @param {number} thickness */
   function outlinePass(strength, thickness) {
@@ -204,11 +210,20 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     seleccion.edgeStrength = P.selection.strength; seleccion.edgeThickness = P.selection.thickness;
     for (const o of detalles) { o.edgeStrength = P.selection.detailStrength; o.edgeThickness = P.selection.detailThickness; }
     aplicarBordes(P.edges);
+    aplicarBloom(P.bloom);
     aplicarModo();
   }
 
   // ---------- contorno fino ----------
   /** @param {Partial<Preset['edges']>} e */
+  /** @param {Partial<Preset['bloom']>} b */
+  function aplicarBloom(b) {
+    if (b.enabled !== undefined) bloomPass.enabled = !!b.enabled;
+    if (b.strength !== undefined) bloomPass.strength = b.strength;
+    if (b.radius !== undefined) bloomPass.radius = b.radius;
+    if (b.threshold !== undefined) bloomPass.threshold = b.threshold;
+  }
+
   function aplicarBordes(e) {
     if (e.enabled !== undefined) edgePass.enabled = !!e.enabled;
     if (e.normalThreshold !== undefined) edgePass.uniforms.normalThreshold.value = e.normalThreshold;
@@ -369,6 +384,16 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     edges(e) {
       if (e) { P = mergePreset(P, { edges: e }); aplicarBordes(e); }
       return { enabled: edgePass.enabled, normalThreshold: edgePass.uniforms.normalThreshold.value, depthThreshold: edgePass.uniforms.depthThreshold.value, darken: edgePass.uniforms.darkenFactor.value };
+    },
+
+    /**
+     * El bloom: lo que pasa de `threshold` se derrama alrededor (la luz de un emisivo, un reflejo
+     * fuerte). `{ enabled, strength, radius, threshold }`; sin argumentos, devuelve cómo está.
+     * @param {Partial<Preset['bloom']>} [b]
+     */
+    bloom(b) {
+      if (b) { P = mergePreset(P, { bloom: b }); aplicarBloom(b); }
+      return { enabled: bloomPass.enabled, strength: bloomPass.strength, radius: bloomPass.radius, threshold: bloomPass.threshold };
     },
 
     /**
