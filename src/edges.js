@@ -124,9 +124,9 @@ export function createEdgePass(renderer, scene, camera) {
   pass.enabled = false;
   pass.uniforms = material.uniforms;
 
+  // el EffectComposer ya le pasa a cada pase el tamaño en píxeles reales (CSS × pixelRatio)
   pass.setSize = (width, height) => {
-    const r = renderer.getPixelRatio();
-    const nw = Math.max(1, Math.floor(width * r)), nh = Math.max(1, Math.floor(height * r));
+    const nw = Math.max(1, Math.floor(width)), nh = Math.max(1, Math.floor(height));
     normalTarget.setSize(nw, nh);
     material.uniforms.resolution.value.set(nw, nh);
   };

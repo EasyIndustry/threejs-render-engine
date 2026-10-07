@@ -7,6 +7,10 @@ import { PRESETS, resolvePreset, mergePreset, definePreset } from '../src/preset
 import { ENGINE_MEMBERS } from '../src/members.js';
 import { memberNames } from '../src/help.js';
 import { classifyGpu, GPU_KIND_TEXT } from '../src/gpu.js';
+import { createAutoScale } from '../src/resolution.js';
+
+/** n cuadros de `ms` cada uno; devuelve la última escala que cambió (o null). */
+const cuadros = (a, n, ms) => { let c = null; for (let i = 0; i < n; i++) { const r = a.sample(ms); if (r !== null) c = r; } return c; };
 
 const fuente = (f) => readFile(new URL(`../src/${f}`, import.meta.url), 'utf8');
 
@@ -80,8 +84,35 @@ test('classifyGpu: dedicada, integrada o software, con los nombres que da WebGL'
   for (const t of ['discrete', 'integrated', 'software', 'unknown']) assert.ok(GPU_KIND_TEXT[t], t);
 });
 
+test('resolución automática: si no llega a los fps baja, y no pasa del mínimo', () => {
+  const a = createAutoScale({ fps: 60, min: 0.4 });
+  assert.equal(a.scale, 1);
+  const bajo = cuadros(a, 30, 33); // 30 fps
+  assert.ok(bajo !== null && bajo < 1 && bajo >= 0.7, `bajó a ${bajo}`);
+  cuadros(a, 30 * 20, 100); // muy lento, mucho tiempo
+  assert.equal(a.scale, 0.4);
+});
+
+test('resolución automática: sube despacio solo si estuvo estable varias mediciones', () => {
+  const a = createAutoScale({ fps: 60, start: 0.5 });
+  assert.equal(cuadros(a, 30 * 3, 16.7), null); // tres mediciones estables: todavía no
+  const sube = cuadros(a, 30, 16.7); // la cuarta
+  assert.equal(sube, 0.55);
+  cuadros(a, 30 * 4 * 20, 16.7);
+  assert.equal(a.scale, 1); // no pasa del máximo
+});
+
+test('resolución automática: un tirón suelto no la baja, una pausa larga no cuenta', () => {
+  const a = createAutoScale({ fps: 60 });
+  for (let i = 0; i < 29; i++) a.sample(16.7);
+  assert.equal(a.sample(80), null); // 1 de 30 cuadros lento: el percentil 75 sigue bien
+  assert.equal(a.sample(5000), null); // la pestaña estuvo oculta
+  assert.equal(a.scale, 1);
+  assert.throws(() => createAutoScale({ min: 0 }), /límites/);
+});
+
 test('lo puro no importa three ni el DOM', async () => {
-  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js']) {
+  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js']) {
     const s = await fuente(f);
     assert.doesNotMatch(s, /^import .* from 'three/m, f);
     assert.doesNotMatch(s, /\b(document|window)\./, f);

@@ -23,6 +23,7 @@ import { createEdgePass } from './edges.js';
 import { pathTrace } from './pathtracer.js';
 import { help } from './help.js';
 import { classifyGpu, GPU_KIND_TEXT } from './gpu.js';
+import { createAutoScale } from './resolution.js';
 import { ENGINE_MEMBERS } from './members.js';
 
 export { PRESETS, resolvePreset, mergePreset, definePreset, ENGINE_MEMBERS };
@@ -49,11 +50,12 @@ function matcapTexture() {
 /**
  * Crea el motor dentro de un contenedor (o sobre un canvas).
  * @param {HTMLElement | HTMLCanvasElement} target
- * @param {{ preset?: string | Record<string, any>, area?: number, fov?: number, controls?: boolean, pixelRatio?: number, antialias?: number }} [opts]
+ * @param {{ preset?: string | Record<string, any>, area?: number, fov?: number, controls?: boolean, pixelRatio?: number, antialias?: number, resolution?: number | 'auto' }} [opts]
  *   `area`: el radio de la zona de trabajo en la unidad de la escena (cm: 250 es un taller).
  *   `antialias`: muestras de MSAA del visor (4 por defecto; 0 lo apaga).
+ *   `resolution`: escala de los píxeles del visor (1 nativa, 0.5 la mitad) o 'auto' (ver resolution()).
  */
-export function createEngine(target, { preset = 'studio', area = 250, fov = 38, controls: conControles = true, pixelRatio, antialias = 4 } = {}) {
+export function createEngine(target, { preset = 'studio', area = 250, fov = 38, controls: conControles = true, pixelRatio, antialias = 4, resolution: resolucionInicial = 1 } = {}) {
   if (!(area > 0)) throw new RangeError(`area inválida: ${area} (va el radio de la zona de trabajo, mayor que 0)`);
   const esCanvas = target instanceof HTMLCanvasElement;
   const container = esCanvas ? /** @type {HTMLElement} */ (target.parentElement ?? document.body) : target;
@@ -65,7 +67,9 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
 
   // ---------- renderer, escena, cámara ----------
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance', ...(esCanvas ? { canvas: target } : {}) });
-  renderer.setPixelRatio(pixelRatio ?? Math.min(window.devicePixelRatio, 2));
+  /** El pixelRatio con escala 1: el de la pantalla, hasta 2 (o el que se pidió). */
+  const prBase = pixelRatio ?? Math.min(window.devicePixelRatio, 2);
+  renderer.setPixelRatio(prBase);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -256,12 +260,25 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const ro = new ResizeObserver(ajustar);
   ro.observe(container);
 
+  // ---------- resolución: cuántos píxeles se dibujan (fija o automática) ----------
+  let escala = 1;
+  /** @type {ReturnType<typeof createAutoScale> | null} */ let auto = null;
+  /** @param {number} s */
+  function aplicarEscala(s) {
+    escala = s;
+    const pr = prBase * s;
+    renderer.setPixelRatio(pr);
+    composer.setPixelRatio(pr);
+    ajustar();
+  }
+
   // ---------- el cuadro ----------
   /** @type {Set<(dt: number) => void>} */
   const alCuadro = new Set();
   const reloj = new THREE.Clock();
   renderer.setAnimationLoop(() => {
     const dt = reloj.getDelta();
+    if (auto) { const n = auto.sample(dt * 1000); if (n !== null) aplicarEscala(n); }
     controls?.update();
     for (const fn of alCuadro) fn(dt);
     conModo(() => composer.render());
@@ -423,9 +440,33 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       if (print) {
         const color = kind === 'discrete' ? '#2e7d32' : kind === 'unknown' ? '#666' : '#c62828';
         console.log(`%cGPU%c ${name}  —  %c${GPU_KIND_TEXT[kind]}`, 'font-weight:700', '', `color:${color};font-weight:600`);
-        console.log(`   ${info.buffer} px (pixelRatio ${info.pixelRatio}), MSAA ${info.antialias} de ${info.maxMSAA} posibles`);
+        console.log(`   ${info.buffer} px (pixelRatio ${info.pixelRatio}, resolución ${auto ? 'auto, ' : ''}${Math.round(escala * 100)}%), MSAA ${info.antialias} de ${info.maxMSAA} posibles`);
       }
       return info;
+    },
+
+    /**
+     * Con cuántos píxeles se dibuja el visor, en vivo. Un número es la escala respecto de la
+     * resolución nativa (1; 0.5 es la mitad de ancho y de alto: un cuarto de los píxeles), y el
+     * navegador estira la imagen a la ventana. 'auto' la ajusta sola según lo que tarda cada
+     * cuadro, entre `min` y `max`, para llegar a `fps`. Sin argumentos, devuelve cómo está.
+     * No toca el render final (render() tiene su propio tamaño).
+     * @param {number | 'auto'} [value] @param {import('./resolution.js').AutoOptions} [opts]
+     */
+    resolution(value, opts = {}) {
+      if (value === 'auto') {
+        auto = createAutoScale({ ...opts, start: escala });
+        aplicarEscala(auto.scale);
+      } else if (value !== undefined) {
+        if (typeof value !== 'number' || !(value >= 0.1 && value <= 2)) throw new RangeError(`resolución inválida: ${String(value)} (va un número entre 0.1 y 2, o 'auto')`);
+        auto = null;
+        aplicarEscala(value);
+      }
+      const gl = renderer.getContext();
+      return Object.freeze({
+        mode: auto ? 'auto' : 'fixed', scale: escala, pixelRatio: +renderer.getPixelRatio().toFixed(3),
+        buffer: `${gl.drawingBufferWidth}x${gl.drawingBufferHeight}`, ...(auto ? auto.options : {}),
+      });
     },
 
     /** Algo que corre en cada cuadro, antes de dibujar (etiquetas, animaciones). Devuelve cómo sacarlo. @param {(dt: number) => void} fn */
@@ -446,5 +487,6 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     /** @param {{ print?: boolean }} [o] */
     help(o) { return help('Engine — cómo se ve la escena', ENGINE_MEMBERS, o); },
   };
+  if (resolucionInicial !== 1) motor.resolution(resolucionInicial);
   return motor;
 }

@@ -1,5 +1,16 @@
 # Cambios
 
+## 0.2.0
+
+- `resolution(value, { min, max, fps })`: con cuántos píxeles se dibuja el visor, en vivo. Un
+  número es la escala respecto de la resolución nativa (0.5: la mitad de ancho y de alto); el
+  navegador estira la imagen a la ventana. `'auto'` la ajusta sola según lo que tarda cada
+  cuadro (percentil 75 de 30 cuadros; baja rápido, sube despacio), entre `min` y `max`. También
+  como opción de `createEngine({ resolution })`. El control está en `src/resolution.js` (puro,
+  con pruebas). No toca `render()`.
+- Arreglo: el contorno fino multiplicaba dos veces por el pixelRatio al cambiar de tamaño (el
+  EffectComposer ya le pasa los píxeles reales). Con pixelRatio 1 no se notaba.
+
 ## 0.1.3
 
 - `gpu({ print })`: en qué placa se dibuja — nombre, fabricante y tipo (`discrete`,
