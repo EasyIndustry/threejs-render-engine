@@ -2,7 +2,7 @@
 // render final. Son DATOS: un cliente nuevo es un preset nuevo (o uno que pisa algunos valores
 // de otro), no código.
 //
-// Las distancias van en función de `area` (el radio de la zona de trabajo, en la unidad de la
+// El radio del AO (y las distancias) van en función de `area` (el radio de la zona de trabajo, en la unidad de la
 // escena), así el mismo preset sirve en cm, en mm o en m: el motor escala sombras, grilla y
 // niebla con ella.
 //
@@ -22,6 +22,7 @@
  *   selection: { color: string, strength: number, thickness: number, detailStrength: number, detailThickness: number },
  *   edges: { enabled: boolean, normalThreshold: number, depthThreshold: number, darken: number },
  *   bloom: { enabled: boolean, strength: number, radius: number, threshold: number },
+ *   ao: { enabled: boolean, radius: number, intensity: number, samples: number },
  *   render: { samples: number, bounces: number, sky: string, ground: string, environmentIntensity: number },
  * }} Preset
  */
@@ -40,6 +41,7 @@ const STUDIO = {
   selection: { color: '#2f6fd6', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
   bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
+  ao: { enabled: false, radius: 0.03, intensity: 1, samples: 16 },
   render: { samples: 256, bounces: 5, sky: '#ffffff', ground: '#9a9aa2', environmentIntensity: 1 },
 };
 
@@ -57,6 +59,7 @@ const WARM = {
   selection: { color: '#a84a1f', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
   bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
+  ao: { enabled: false, radius: 0.03, intensity: 1, samples: 16 },
   render: { samples: 256, bounces: 5, sky: '#fff6ea', ground: '#b8987a', environmentIntensity: 1 },
 };
 
@@ -74,6 +77,7 @@ const DARK = {
   selection: { color: '#e2984f', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
   bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
+  ao: { enabled: false, radius: 0.03, intensity: 1, samples: 16 },
   render: { samples: 256, bounces: 5, sky: '#3a3f4a', ground: '#0c0c0f', environmentIntensity: 1 },
 };
 

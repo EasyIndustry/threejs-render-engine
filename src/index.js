@@ -19,6 +19,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { PRESETS, resolvePreset, mergePreset, definePreset } from './presets.js';
 import { createEdgePass } from './edges.js';
 import { pathTrace } from './pathtracer.js';
@@ -113,6 +114,11 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(w0, h0);
   composer.addPass(new RenderPass(scene, camera));
+  // oclusión ambiental (GTAO): los rincones, las uniones y lo que apoya en el piso se oscurecen
+  // donde la luz del ambiente casi no llega. Justo después de la escena, antes de contornos y bloom.
+  const aoPass = new GTAOPass(scene, camera, w0, h0);
+  aoPass.enabled = false;
+  composer.addPass(aoPass);
   const edgePass = createEdgePass(renderer, scene, camera);
   composer.addPass(edgePass);
   // bloom: lo que pasa de `threshold` (en lineal: un emisivo con intensidad > 1, un reflejo del
@@ -211,11 +217,23 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     for (const o of detalles) { o.edgeStrength = P.selection.detailStrength; o.edgeThickness = P.selection.detailThickness; }
     aplicarBordes(P.edges);
     aplicarBloom(P.bloom);
+    aplicarAO(P.ao);
     aplicarModo();
   }
 
   // ---------- contorno fino ----------
   /** @param {Partial<Preset['edges']>} e */
+  /** El radio va en fracción de `area` (como las sombras): 0.03 de un taller de 250 cm son 7,5 cm. @param {Partial<Preset['ao']>} a */
+  function aplicarAO(a) {
+    if (a.enabled !== undefined) aoPass.enabled = !!a.enabled;
+    if (a.intensity !== undefined) aoPass.blendIntensity = a.intensity;
+    /** @type {Record<string, number>} */
+    const g = {};
+    if (a.radius !== undefined) { g.radius = a.radius * area; g.thickness = a.radius * area; }
+    if (a.samples !== undefined) g.samples = a.samples;
+    if (Object.keys(g).length) aoPass.updateGtaoMaterial(g);
+  }
+
   /** @param {Partial<Preset['bloom']>} b */
   function aplicarBloom(b) {
     if (b.enabled !== undefined) bloomPass.enabled = !!b.enabled;
@@ -394,6 +412,17 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     bloom(b) {
       if (b) { P = mergePreset(P, { bloom: b }); aplicarBloom(b); }
       return { enabled: bloomPass.enabled, strength: bloomPass.strength, radius: bloomPass.radius, threshold: bloomPass.threshold };
+    },
+
+    /**
+     * La oclusión ambiental (GTAO): los rincones, las uniones y el contacto con el piso se
+     * oscurecen. `{ enabled, radius (fracción de area), intensity, samples }`; sin argumentos,
+     * devuelve cómo está.
+     * @param {Partial<Preset['ao']>} [a]
+     */
+    ao(a) {
+      if (a) { P = mergePreset(P, { ao: a }); aplicarAO(a); }
+      return { ...P.ao, enabled: aoPass.enabled };
     },
 
     /**

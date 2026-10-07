@@ -1,5 +1,13 @@
 # Cambios
 
+## 0.4.0
+
+- Oclusión ambiental (`GTAOPass`): rincones, uniones y el contacto con el piso se oscurecen
+  donde casi no llega la luz del ambiente. Sección `ao` en los presets (apagada por defecto) y
+  `motor.ao({ enabled, radius, intensity, samples })`; el radio va en fracción de `area`, como
+  las sombras (0.03 de un taller de 250 cm son 7,5 cm). Va justo después de la escena, antes de
+  los contornos y del bloom.
+
 ## 0.3.0
 
 - Bloom (`UnrealBloomPass`): lo que pasa de `threshold` en lineal (un emisivo con intensidad
