@@ -22,6 +22,7 @@ export const ENGINE_MEMBERS = [
   ['frame(objects?)', 'encuadrar la cámara en unos objetos, o en todo'],
   ['snapshot({ width?, height?, type?, quality? })', 'una foto rápida del visor, como data URL'],
   ['render({ samples?, width?, height?, bounces?, camera?, onProgress?, signal?, type? })', 'el render final con path tracing: una Promise de la imagen (Blob)'],
+  ['gpu({ print? })', "en qué placa se dibuja: { name, vendor, kind: 'discrete' | 'integrated' | 'software' | 'unknown', buffer, pixelRatio, maxMSAA, antialias }; la imprime en la consola"],
   ['onFrame(fn)', 'algo que corre en cada cuadro, antes de dibujar; devuelve cómo sacarlo'],
   ['dispose()', 'soltar todo: loop, post-proceso y renderer'],
   ['help()', 'esta tabla'],

@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { PRESETS, resolvePreset, mergePreset, definePreset } from '../src/presets.js';
 import { ENGINE_MEMBERS } from '../src/members.js';
 import { memberNames } from '../src/help.js';
+import { classifyGpu, GPU_KIND_TEXT } from '../src/gpu.js';
 
 const fuente = (f) => readFile(new URL(`../src/${f}`, import.meta.url), 'utf8');
 
@@ -59,8 +60,28 @@ test('{ extends } y definePreset: el preset de un cliente pisa a uno que existe'
   delete PRESETS['prueba-cliente'];
 });
 
+test('classifyGpu: dedicada, integrada o software, con los nombres que da WebGL', () => {
+  const casos = {
+    'ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0)': 'discrete',
+    'ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)': 'discrete',
+    'ANGLE (AMD, AMD Radeon RX 6700 XT Direct3D11 vs_5_0 ps_5_0, D3D11)': 'discrete',
+    'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)': 'integrated',
+    'Mesa Intel(R) Iris(R) Xe Graphics (TGL GT2)': 'integrated',
+    'ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)': 'integrated',
+    'AMD Radeon Vega 8 Graphics': 'integrated',
+    'Apple M2': 'integrated',
+    'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)': 'software',
+    'llvmpipe (LLVM 15.0.7, 256 bits)': 'software',
+    'Microsoft Basic Render Driver': 'software',
+    '': 'unknown',
+    'WebKit WebGL': 'unknown',
+  };
+  for (const [nombre, tipo] of Object.entries(casos)) assert.equal(classifyGpu(nombre), tipo, nombre);
+  for (const t of ['discrete', 'integrated', 'software', 'unknown']) assert.ok(GPU_KIND_TEXT[t], t);
+});
+
 test('lo puro no importa three ni el DOM', async () => {
-  for (const f of ['presets.js', 'help.js', 'members.js']) {
+  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js']) {
     const s = await fuente(f);
     assert.doesNotMatch(s, /^import .* from 'three/m, f);
     assert.doesNotMatch(s, /\b(document|window)\./, f);

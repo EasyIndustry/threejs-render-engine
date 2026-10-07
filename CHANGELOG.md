@@ -1,5 +1,14 @@
 # Cambios
 
+## 0.1.3
+
+- `gpu({ print })`: en qué placa se dibuja — nombre, fabricante y tipo (`discrete`,
+  `integrated`, `software` o `unknown`), tamaño del buffer, pixelRatio y MSAA usado y posible.
+  Lo imprime en la consola con un aviso si es integrada o por software. La clasificación por
+  nombre está en `src/gpu.js` (pura, con prueba). Elegir la placa no se puede desde una
+  página: `powerPreference: 'high-performance'` es un pedido que el navegador y el sistema
+  pueden ignorar.
+
 ## 0.1.2
 
 - Antialiasing en el visor: el post-proceso dibuja a un render target con MSAA

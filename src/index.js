@@ -22,6 +22,7 @@ import { PRESETS, resolvePreset, mergePreset, definePreset } from './presets.js'
 import { createEdgePass } from './edges.js';
 import { pathTrace } from './pathtracer.js';
 import { help } from './help.js';
+import { classifyGpu, GPU_KIND_TEXT } from './gpu.js';
 import { ENGINE_MEMBERS } from './members.js';
 
 export { PRESETS, resolvePreset, mergePreset, definePreset, ENGINE_MEMBERS };
@@ -399,6 +400,33 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
      * @param {import('./pathtracer.js').RenderOptions} [opts]
      */
     render(opts) { return pathTrace({ scene, camera, renderer, preset: () => P }, opts); },
+
+    /**
+     * En qué placa se está dibujando: { name, vendor, kind, buffer, pixelRatio, maxMSAA, antialias }.
+     * `kind`: 'discrete' | 'integrated' | 'software' | 'unknown'. Lo imprime en la consola (con
+     * { print: false }, solo lo devuelve).
+     * @param {{ print?: boolean }} [o]
+     */
+    gpu({ print = true } = {}) {
+      const gl = renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      const vendor = String(ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR));
+      const kind = classifyGpu(name);
+      const info = Object.freeze({
+        name, vendor, kind,
+        buffer: `${gl.drawingBufferWidth}x${gl.drawingBufferHeight}`,
+        pixelRatio: renderer.getPixelRatio(),
+        maxMSAA: /** @type {number} */ (gl.getParameter(/** @type {WebGL2RenderingContext} */ (gl).MAX_SAMPLES) ?? 0),
+        antialias: composer.renderTarget1.samples,
+      });
+      if (print) {
+        const color = kind === 'discrete' ? '#2e7d32' : kind === 'unknown' ? '#666' : '#c62828';
+        console.log(`%cGPU%c ${name}  —  %c${GPU_KIND_TEXT[kind]}`, 'font-weight:700', '', `color:${color};font-weight:600`);
+        console.log(`   ${info.buffer} px (pixelRatio ${info.pixelRatio}), MSAA ${info.antialias} de ${info.maxMSAA} posibles`);
+      }
+      return info;
+    },
 
     /** Algo que corre en cada cuadro, antes de dibujar (etiquetas, animaciones). Devuelve cómo sacarlo. @param {(dt: number) => void} fn */
     onFrame(fn) { alCuadro.add(fn); return () => alCuadro.delete(fn); },
