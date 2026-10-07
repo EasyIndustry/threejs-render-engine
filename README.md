@@ -27,6 +27,8 @@ motor.help();                                   // todo lo que hay
   (250 en cm es un taller): sombras, grilla, niebla y cámara se escalan con ella.
 - **Render en un click.** `render()` hace path tracing de la escena como está, en un
   renderer aparte del tamaño pedido, y devuelve un PNG. El visor sigue andando mientras.
+- **Bordes suaves.** El post-proceso usa MSAA (`antialias: 4` por defecto); el render final
+  ya sale suave porque el path tracing muestrea dentro de cada píxel.
 - **Sin build.** Módulos ES, el navegador los carga tal cual. Sin dependencias propias:
   three es *peer*, y three-gpu-pathtracer solo hace falta si se usa `render()` (se carga
   la primera vez que se pide).

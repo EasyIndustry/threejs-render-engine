@@ -48,10 +48,11 @@ function matcapTexture() {
 /**
  * Crea el motor dentro de un contenedor (o sobre un canvas).
  * @param {HTMLElement | HTMLCanvasElement} target
- * @param {{ preset?: string | Record<string, any>, area?: number, fov?: number, controls?: boolean, pixelRatio?: number }} [opts]
+ * @param {{ preset?: string | Record<string, any>, area?: number, fov?: number, controls?: boolean, pixelRatio?: number, antialias?: number }} [opts]
  *   `area`: el radio de la zona de trabajo en la unidad de la escena (cm: 250 es un taller).
+ *   `antialias`: muestras de MSAA del visor (4 por defecto; 0 lo apaga).
  */
-export function createEngine(target, { preset = 'studio', area = 250, fov = 38, controls: conControles = true, pixelRatio } = {}) {
+export function createEngine(target, { preset = 'studio', area = 250, fov = 38, controls: conControles = true, pixelRatio, antialias = 4 } = {}) {
   if (!(area > 0)) throw new RangeError(`area inválida: ${area} (va el radio de la zona de trabajo, mayor que 0)`);
   const esCanvas = target instanceof HTMLCanvasElement;
   const container = esCanvas ? /** @type {HTMLElement} */ (target.parentElement ?? document.body) : target;
@@ -99,11 +100,13 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   /** @type {THREE.GridHelper | null} */ let grid = null;
 
   // ---------- post-proceso ----------
-  const composer = new EffectComposer(renderer);
+  // el post-proceso dibuja a texturas intermedias, que no tienen el antialiasing del canvas: sin
+  // MSAA en ellas los bordes de las piezas quedan dentados
+  const pr0 = renderer.getPixelRatio();
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w0 * pr0, h0 * pr0, { type: THREE.HalfFloatType, samples: Math.max(0, antialias) }));
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(w0, h0);
-  const renderPass = new RenderPass(scene, camera);
-  composer.addPass(renderPass);
+  composer.addPass(new RenderPass(scene, camera));
   const edgePass = createEdgePass(renderer, scene, camera);
   composer.addPass(edgePass);
 
@@ -218,10 +221,27 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     matcap: new THREE.MeshMatcapMaterial({ matcap: matcapTexture() }),
   };
   function aplicarModo() {
-    // en el RenderPass y no en scene.overrideMaterial: los pases de contorno usan el de la
-    // escena para sus máscaras y lo dejan en null al terminar
-    renderPass.overrideMaterial = modo === 'render' ? null : pisadores[modo];
     aplicarVisibilidad();
+  }
+
+  /**
+   * Dibuja con el material del modo puesto solo en las mallas de la app (no en el estudio ni en
+   * el fondo), y lo devuelve. No va en scene.overrideMaterial: ese pisa también la grilla y el
+   * fondo, y los pases de contorno lo usan para sus máscaras y lo dejan en null al terminar.
+   * @param {() => void} dibujar
+   */
+  function conModo(dibujar) {
+    if (modo === 'render') return dibujar();
+    const pisador = pisadores[modo];
+    /** @type {[THREE.Mesh, THREE.Material | THREE.Material[]][]} */
+    const cambiados = [];
+    scene.traverse((o) => {
+      const m = /** @type {THREE.Mesh} */ (o);
+      if (!m.isMesh || o.parent === estudio) return;
+      cambiados.push([m, m.material]);
+      m.material = pisador;
+    });
+    try { dibujar(); } finally { for (const [m, mat] of cambiados) m.material = mat; }
   }
 
   // ---------- tamaño ----------
@@ -243,7 +263,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     const dt = reloj.getDelta();
     controls?.update();
     for (const fn of alCuadro) fn(dt);
-    composer.render();
+    conModo(() => composer.render());
     if (overlay.children.length) {
       renderer.autoClear = false;
       renderer.clearDepth();
@@ -364,7 +384,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
         composer.setPixelRatio(1);
         composer.setSize(W, H);
         camera.aspect = W / H; camera.updateProjectionMatrix();
-        composer.render();
+        conModo(() => composer.render());
         return renderer.domElement.toDataURL(type, quality);
       } finally {
         renderer.setPixelRatio(prev);

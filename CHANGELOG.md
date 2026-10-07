@@ -1,5 +1,14 @@
 # Cambios
 
+## 0.1.2
+
+- Antialiasing en el visor: el post-proceso dibuja a un render target con MSAA
+  (`createEngine(…, { antialias: 4 })`, 0 lo apaga). Sin eso los bordes quedaban dentados,
+  porque las texturas intermedias del composer no tienen el antialiasing del canvas.
+- Los modos de vista (clay, wireframe, normals, matcap) cambian el material solo de las mallas
+  de la app, cuadro a cuadro: antes pisaban también la grilla (líneas oscuras y gruesas) y el
+  fondo (una franja negra donde iba el cielo).
+
 ## 0.1.1
 
 - `render()`: las mallas con varios materiales salen bien. three-gpu-pathtracer 0.0.23 numera
