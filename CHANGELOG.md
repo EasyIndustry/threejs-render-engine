@@ -1,5 +1,20 @@
 # Cambios
 
+## 0.5.0
+
+- **Calidad, como en un juego** (`src/quality.js`): lo que cuesta GPU va aparte de la apariencia.
+  `motor.quality('baja' | 'media' | 'alta')` cambia antialiasing (0/4/8), tamaño de las sombras
+  (1024/2048/4096), oclusión ambiental, bloom, muestras del render final y la pista de texturas
+  SD/HD para la app. Un ajuste suelto (`motor.quality({ antialias: 8 })`, `motor.ao({ enabled })`,
+  `motor.bloom({ enabled })`) la vuelve `'personalizada'`; `motor.quality()` la devuelve como objeto
+  plano para guardarla y restaurarla. `motor.suggestQuality()` la sugiere según la placa, y
+  `motor.onQualityChange(fn)` avisa (la app cambia sus texturas). La resolución sigue aparte.
+- **Ruptura**: salen del preset de apariencia `sun.shadowMapSize`, `bloom.enabled`, `ao.enabled`,
+  `ao.samples` y `render.samples` (son de la calidad), y la opción `antialias` de `createEngine`
+  (va `quality`). `bloom()` y `ao()` siguen aceptando `enabled`.
+- `render()`: en imágenes chicas hace varias muestras por cuadro (hasta 16): un render de 200×150
+  a 512 muestras pasó de 35 s a 6 s. En grandes, una por cuadro, como antes.
+
 ## 0.4.0
 
 - Oclusión ambiental (`GTAOPass`): rincones, uniones y el contacto con el piso se oscurecen

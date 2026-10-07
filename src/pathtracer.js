@@ -69,7 +69,7 @@ function porGrupo(o) {
 }
 
 /**
- * @param {{ scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, preset: () => Preset }} ctx
+ * @param {{ scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, preset: () => Preset, samples?: number }} ctx
  * @param {RenderOptions} [opts]
  * @returns {Promise<Blob>}
  */
@@ -77,7 +77,7 @@ export async function pathTrace(ctx, opts = {}) {
   const { scene, renderer: visor } = ctx;
   const p = ctx.preset();
   const tam = visor.getSize(new THREE.Vector2());
-  const { samples = p.render.samples, bounces = p.render.bounces, onProgress, signal, type = 'image/png' } = opts;
+  const { samples = ctx.samples ?? 256, bounces = p.render.bounces, onProgress, signal, type = 'image/png' } = opts;
   const width = Math.round(opts.width ?? tam.x), height = Math.round(opts.height ?? tam.y);
   if (!(samples >= 1) || !(width >= 1) || !(height >= 1)) throw new RangeError('samples, width y height van mayores que 0');
 
@@ -149,9 +149,12 @@ export async function pathTrace(ctx, opts = {}) {
   }
 
   try {
+    // varias muestras por cuadro en imágenes chicas (esperar un cuadro por muestra es lo que más
+    // tarda); en grandes, una, para no trabar la GPU (cada muestra ya es mucho trabajo)
+    const porCuadro = Math.max(1, Math.min(16, Math.floor(2e6 / (width * height))));
     while (tracer.samples < samples) {
       if (signal?.aborted) throw new DOMException('render cancelado', 'AbortError');
-      tracer.renderSample();
+      for (let i = 0; i < porCuadro && tracer.samples < samples; i++) tracer.renderSample();
       onProgress?.(Math.min(1, tracer.samples / samples), Math.floor(tracer.samples));
       await cuadro();
     }

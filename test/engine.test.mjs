@@ -8,6 +8,7 @@ import { ENGINE_MEMBERS } from '../src/members.js';
 import { memberNames } from '../src/help.js';
 import { classifyGpu, GPU_KIND_TEXT } from '../src/gpu.js';
 import { createAutoScale } from '../src/resolution.js';
+import { QUALITY, CUSTOM_QUALITY, resolveQuality, mergeQuality, qualityName, suggestQuality } from '../src/quality.js';
 
 /** n cuadros de `ms` cada uno; devuelve la última escala que cambió (o null). */
 const cuadros = (a, n, ms) => { let c = null; for (let i = 0; i < n; i++) { const r = a.sample(ms); if (r !== null) c = r; } return c; };
@@ -123,8 +124,39 @@ test('resolución automática: un tirón suelto no la baja, una pausa larga no c
   assert.throws(() => createAutoScale({ min: 0 }), /límites/);
 });
 
+test('calidad: baja, media y alta tienen los mismos ajustes, y suben de costo', () => {
+  const claves = Object.keys(QUALITY.media).sort();
+  for (const q of ['baja', 'media', 'alta']) assert.deepEqual(Object.keys(QUALITY[q]).sort(), claves, q);
+  assert.ok(QUALITY.baja.antialias < QUALITY.media.antialias && QUALITY.media.antialias < QUALITY.alta.antialias);
+  assert.ok(QUALITY.baja.shadowMapSize < QUALITY.alta.shadowMapSize);
+  assert.equal(QUALITY.alta.textures, 'hd');
+});
+
+test('calidad: tocar un ajuste la vuelve personalizada; volver a los valores de fábrica, no', () => {
+  const p = mergeQuality(resolveQuality('media'), { ao: true });
+  assert.equal(qualityName(p), CUSTOM_QUALITY);
+  assert.equal(qualityName(mergeQuality(p, { ao: false })), 'media');
+  assert.equal(qualityName(resolveQuality({ extends: 'alta', bloom: false })), CUSTOM_QUALITY);
+  assert.deepEqual(resolveQuality('baja'), { ...QUALITY.baja });
+});
+
+test('calidad: un ajuste mal escrito o fuera de rango es un error claro', () => {
+  assert.throws(() => resolveQuality('ultra'), /calidad desconocida: ultra/);
+  assert.throws(() => mergeQuality(QUALITY.media, { msaa: 4 }), /ajuste de calidad desconocido: msaa/);
+  assert.throws(() => mergeQuality(QUALITY.media, { antialias: 3 }), /antialias: va 0, 2, 4, 8 o 16/);
+  assert.throws(() => mergeQuality(QUALITY.media, { shadowMapSize: 3000 }), /potencia de 2/);
+  assert.throws(() => mergeQuality(QUALITY.media, { textures: '4k' }), /textures/);
+});
+
+test('calidad sugerida según la placa', () => {
+  assert.equal(suggestQuality('discrete'), 'alta');
+  assert.equal(suggestQuality('integrated'), 'baja');
+  assert.equal(suggestQuality('software'), 'baja');
+  assert.equal(suggestQuality('unknown'), 'media');
+});
+
 test('lo puro no importa three ni el DOM', async () => {
-  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js']) {
+  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js', 'quality.js']) {
     const s = await fuente(f);
     assert.doesNotMatch(s, /^import .* from 'three/m, f);
     assert.doesNotMatch(s, /\b(document|window)\./, f);

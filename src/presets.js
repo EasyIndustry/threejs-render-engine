@@ -1,5 +1,6 @@
 // Los presets: cómo se ve una escena — fondo, luces, piso, grilla, contornos y el entorno del
-// render final. Son DATOS: un cliente nuevo es un preset nuevo (o uno que pisa algunos valores
+// render final. Lo que cuesta GPU (antialiasing, tamaño de las sombras, prender el AO o el bloom,
+// muestras del render) no está acá: es la CALIDAD (quality.js). Son DATOS: un cliente nuevo es un preset nuevo (o uno que pisa algunos valores
 // de otro), no código.
 //
 // El radio del AO (y las distancias) van en función de `area` (el radio de la zona de trabajo, en la unidad de la
@@ -16,14 +17,14 @@
  *   exposure: number,
  *   environment: { intensity: number },
  *   hemisphere: { sky: string, ground: string, intensity: number },
- *   sun: { color: string, intensity: number, direction: [number, number, number], shadows: boolean, shadowMapSize: number },
+ *   sun: { color: string, intensity: number, direction: [number, number, number], shadows: boolean },
  *   floor: { color: string, roughness: number } | null,
  *   grid: { color: string, opacity: number, divisions: number } | null,
  *   selection: { color: string, strength: number, thickness: number, detailStrength: number, detailThickness: number },
  *   edges: { enabled: boolean, normalThreshold: number, depthThreshold: number, darken: number },
- *   bloom: { enabled: boolean, strength: number, radius: number, threshold: number },
- *   ao: { enabled: boolean, radius: number, intensity: number, samples: number },
- *   render: { samples: number, bounces: number, sky: string, ground: string, environmentIntensity: number },
+ *   bloom: { strength: number, radius: number, threshold: number },
+ *   ao: { radius: number, intensity: number },
+ *   render: { bounces: number, sky: string, ground: string, environmentIntensity: number },
  * }} Preset
  */
 
@@ -35,14 +36,14 @@ const STUDIO = {
   exposure: 1,
   environment: { intensity: 0.35 },
   hemisphere: { sky: '#ffffff', ground: '#8a8a90', intensity: 0.9 },
-  sun: { color: '#ffffff', intensity: 2.2, direction: [0.45, 0.82, 0.35], shadows: true, shadowMapSize: 2048 },
+  sun: { color: '#ffffff', intensity: 2.2, direction: [0.45, 0.82, 0.35], shadows: true },
   floor: { color: '#d9d9dd', roughness: 1 },
   grid: { color: '#9a9aa2', opacity: 0.25, divisions: 28 },
   selection: { color: '#2f6fd6', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
-  bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
-  ao: { enabled: false, radius: 0.03, intensity: 1, samples: 16 },
-  render: { samples: 256, bounces: 5, sky: '#ffffff', ground: '#9a9aa2', environmentIntensity: 1 },
+  bloom: { strength: 0.8, radius: 0.4, threshold: 1 },
+  ao: { radius: 0.03, intensity: 1 },
+  render: { bounces: 5, sky: '#ffffff', ground: '#9a9aa2', environmentIntensity: 1 },
 };
 
 /** @type {Preset} */
@@ -53,14 +54,14 @@ const WARM = {
   exposure: 1,
   environment: { intensity: 0.3 },
   hemisphere: { sky: '#fff3df', ground: '#9c7a5c', intensity: 0.9 },
-  sun: { color: '#ffe0b5', intensity: 2.4, direction: [0.44, 0.8, 0.33], shadows: true, shadowMapSize: 2048 },
+  sun: { color: '#ffe0b5', intensity: 2.4, direction: [0.44, 0.8, 0.33], shadows: true },
   floor: { color: '#e6d2b5', roughness: 1 },
   grid: { color: '#a87b58', opacity: 0.22, divisions: 28 },
   selection: { color: '#a84a1f', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
-  bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
-  ao: { enabled: false, radius: 0.03, intensity: 1, samples: 16 },
-  render: { samples: 256, bounces: 5, sky: '#fff6ea', ground: '#b8987a', environmentIntensity: 1 },
+  bloom: { strength: 0.8, radius: 0.4, threshold: 1 },
+  ao: { radius: 0.03, intensity: 1 },
+  render: { bounces: 5, sky: '#fff6ea', ground: '#b8987a', environmentIntensity: 1 },
 };
 
 /** @type {Preset} */
@@ -71,14 +72,14 @@ const DARK = {
   exposure: 1,
   environment: { intensity: 0.4 },
   hemisphere: { sky: '#8fa6ff', ground: '#1a1712', intensity: 0.55 },
-  sun: { color: '#fff1dc', intensity: 2.4, direction: [0.5, 0.65, 0.45], shadows: true, shadowMapSize: 2048 },
+  sun: { color: '#fff1dc', intensity: 2.4, direction: [0.5, 0.65, 0.45], shadows: true },
   floor: { color: '#1d1d22', roughness: 0.92 },
   grid: { color: '#4a4248', opacity: 0.5, divisions: 28 },
   selection: { color: '#e2984f', strength: 3, thickness: 1.2, detailStrength: 1.2, detailThickness: 0.25 },
   edges: { enabled: false, normalThreshold: 0.7, depthThreshold: 0.6, darken: 0.55 },
-  bloom: { enabled: false, strength: 0.8, radius: 0.4, threshold: 0.9 },
-  ao: { enabled: false, radius: 0.03, intensity: 1, samples: 16 },
-  render: { samples: 256, bounces: 5, sky: '#3a3f4a', ground: '#0c0c0f', environmentIntensity: 1 },
+  bloom: { strength: 0.8, radius: 0.4, threshold: 1 },
+  ao: { radius: 0.03, intensity: 1 },
+  render: { bounces: 5, sky: '#3a3f4a', ground: '#0c0c0f', environmentIntensity: 1 },
 };
 
 /** Los presets que trae el motor. Una app agrega los suyos con `definePreset`. */

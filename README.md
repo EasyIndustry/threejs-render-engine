@@ -8,7 +8,8 @@ vista y el **render final con path tracing en un click**.
 ```js
 import { createEngine } from 'threejs-render-engine';
 
-const motor = createEngine(document.body, { preset: 'warm', area: 250 });
+const motor = createEngine(document.body, { preset: 'warm', quality: 'media', area: 250 });
+motor.quality(motor.suggestQuality());          // alta en una placa dedicada, baja en una integrada
 motor.content.add(miMalla);
 motor.frame();                                  // encuadrar
 motor.select([miMalla], { detail: true });     // contorno de selección
@@ -19,6 +20,10 @@ const png = await motor.render({ samples: 300, width: 1920, height: 1080 });
 motor.help();                                   // todo lo que hay
 ```
 
+- **Calidad, como en un juego**: `motor.quality('baja' | 'media' | 'alta')` — antialiasing,
+  sombras, oclusión ambiental, bloom, muestras del render — o ajustes sueltos, que la vuelven
+  `'personalizada'`. Aparte del preset de apariencia (el look) y de la resolución.
+  `motor.suggestQuality()` la elige según la placa.
 - **Por presets.** Cómo se ve sale de un preset (`studio`, `warm`, `dark`): fondo, cielo,
   niebla, luces, sombras, piso, grilla, colores de los contornos y el entorno del render. Un
   cliente nuevo es un preset nuevo, no código: `definePreset('cliente', { extends: 'warm',

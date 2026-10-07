@@ -25,10 +25,11 @@ import { createEdgePass } from './edges.js';
 import { pathTrace } from './pathtracer.js';
 import { help } from './help.js';
 import { classifyGpu, GPU_KIND_TEXT } from './gpu.js';
+import { QUALITY, CUSTOM_QUALITY, resolveQuality, mergeQuality, qualityName, suggestQuality } from './quality.js';
 import { createAutoScale } from './resolution.js';
 import { ENGINE_MEMBERS } from './members.js';
 
-export { PRESETS, resolvePreset, mergePreset, definePreset, ENGINE_MEMBERS };
+export { PRESETS, resolvePreset, mergePreset, definePreset, ENGINE_MEMBERS, QUALITY, CUSTOM_QUALITY, resolveQuality, suggestQuality };
 
 /** @typedef {import('./presets.js').Preset} Preset */
 /** @typedef {'render' | 'clay' | 'wireframe' | 'normals' | 'matcap'} Mode */
@@ -52,12 +53,14 @@ function matcapTexture() {
 /**
  * Crea el motor dentro de un contenedor (o sobre un canvas).
  * @param {HTMLElement | HTMLCanvasElement} target
- * @param {{ preset?: string | Record<string, any>, area?: number, fov?: number, controls?: boolean, pixelRatio?: number, antialias?: number, resolution?: number | 'auto' }} [opts]
+ * @param {{ preset?: string | Record<string, any>, quality?: string | Record<string, any>, area?: number, fov?: number, controls?: boolean, pixelRatio?: number, resolution?: number | 'auto' }} [opts]
  *   `area`: el radio de la zona de trabajo en la unidad de la escena (cm: 250 es un taller).
- *   `antialias`: muestras de MSAA del visor (4 por defecto; 0 lo apaga).
+ *   `quality`: 'baja' | 'media' | 'alta' o sus ajustes (ver quality.js): lo que cuesta GPU. Media por defecto.
  *   `resolution`: escala de los píxeles del visor (1 nativa, 0.5 la mitad) o 'auto' (ver resolution()).
  */
-export function createEngine(target, { preset = 'studio', area = 250, fov = 38, controls: conControles = true, pixelRatio, antialias = 4, resolution: resolucionInicial = 1 } = {}) {
+export function createEngine(target, { preset = 'studio', area = 250, fov = 38, controls: conControles = true, pixelRatio, quality = 'media', resolution: resolucionInicial = 1 } = {}) {
+  /** La calidad: lo que cuesta GPU (ver quality.js). */
+  let Q = resolveQuality(quality);
   if (!(area > 0)) throw new RangeError(`area inválida: ${area} (va el radio de la zona de trabajo, mayor que 0)`);
   const esCanvas = target instanceof HTMLCanvasElement;
   const container = esCanvas ? /** @type {HTMLElement} */ (target.parentElement ?? document.body) : target;
@@ -110,7 +113,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   // el post-proceso dibuja a texturas intermedias, que no tienen el antialiasing del canvas: sin
   // MSAA en ellas los bordes de las piezas quedan dentados
   const pr0 = renderer.getPixelRatio();
-  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w0 * pr0, h0 * pr0, { type: THREE.HalfFloatType, samples: Math.max(0, antialias) }));
+  const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w0 * pr0, h0 * pr0, { type: THREE.HalfFloatType, samples: Q.antialias }));
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(w0, h0);
   composer.addPass(new RenderPass(scene, camera));
@@ -174,7 +177,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     cieloTex = vis.sky && P.sky ? cielo(P.sky) : null;
     scene.background = cieloTex ?? bg;
     scene.fog = vis.fog && P.fog ? new THREE.Fog(P.sky && vis.sky ? P.sky.bottom : bg, P.fog.near * area, P.fog.far * area) : null;
-    sun.castShadow = P.sun.shadows && vis.shadows;
+    sun.castShadow = P.sun.shadows && vis.shadows && Q.shadows;
     if (grid) grid.visible = vis.grid;
     if (floor) floor.visible = vis.floor && (modo === 'render' || modo === 'clay');
   }
@@ -187,7 +190,6 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     sun.color.set(P.sun.color); sun.intensity = P.sun.intensity;
     const d = new THREE.Vector3(...P.sun.direction).normalize();
     sun.position.copy(d.multiplyScalar(area * 1.1));
-    if (sun.shadow.mapSize.x !== P.sun.shadowMapSize) { sun.shadow.mapSize.set(P.sun.shadowMapSize, P.sun.shadowMapSize); sun.shadow.map?.dispose(); sun.shadow.map = null; }
     Object.assign(sun.shadow.camera, { left: -area * 0.9, right: area * 0.9, top: area * 0.9, bottom: -area * 0.9, near: area * 0.04, far: area * 2.8 });
     sun.shadow.normalBias = area * 0.0016;
     sun.shadow.camera.updateProjectionMatrix();
@@ -221,27 +223,21 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     aplicarModo();
   }
 
-  // ---------- contorno fino ----------
-  /** @param {Partial<Preset['edges']>} e */
   /** El radio va en fracción de `area` (como las sombras): 0.03 de un taller de 250 cm son 7,5 cm. @param {Partial<Preset['ao']>} a */
   function aplicarAO(a) {
-    if (a.enabled !== undefined) aoPass.enabled = !!a.enabled;
     if (a.intensity !== undefined) aoPass.blendIntensity = a.intensity;
-    /** @type {Record<string, number>} */
-    const g = {};
-    if (a.radius !== undefined) { g.radius = a.radius * area; g.thickness = a.radius * area; }
-    if (a.samples !== undefined) g.samples = a.samples;
-    if (Object.keys(g).length) aoPass.updateGtaoMaterial(g);
+    if (a.radius !== undefined) aoPass.updateGtaoMaterial({ radius: a.radius * area, thickness: a.radius * area });
   }
 
   /** @param {Partial<Preset['bloom']>} b */
   function aplicarBloom(b) {
-    if (b.enabled !== undefined) bloomPass.enabled = !!b.enabled;
     if (b.strength !== undefined) bloomPass.strength = b.strength;
     if (b.radius !== undefined) bloomPass.radius = b.radius;
     if (b.threshold !== undefined) bloomPass.threshold = b.threshold;
   }
 
+  // ---------- contorno fino ----------
+  /** @param {Partial<Preset['edges']>} e */
   function aplicarBordes(e) {
     if (e.enabled !== undefined) edgePass.enabled = !!e.enabled;
     if (e.normalThreshold !== undefined) edgePass.uniforms.normalThreshold.value = e.normalThreshold;
@@ -336,6 +332,30 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     return caja;
   }
 
+  // ---------- calidad ----------
+  /** @type {Set<(q: any) => void>} */
+  const avisosCalidad = new Set();
+  /** Aplica la calidad actual: antialiasing, sombras, AO, bloom. */
+  function aplicarCalidad() {
+    for (const t of [composer.renderTarget1, composer.renderTarget2]) {
+      if (t.samples !== Q.antialias) { t.samples = Q.antialias; t.dispose(); }
+    }
+    if (sun.shadow.mapSize.x !== Q.shadowMapSize) { sun.shadow.mapSize.set(Q.shadowMapSize, Q.shadowMapSize); sun.shadow.map?.dispose(); sun.shadow.map = null; }
+    sun.castShadow = P.sun.shadows && vis.shadows && Q.shadows;
+    aoPass.enabled = Q.ao;
+    aoPass.updateGtaoMaterial({ samples: Q.aoSamples });
+    bloomPass.enabled = Q.bloom;
+  }
+  /** @param {import('./quality.js').Quality} nueva */
+  function ponerCalidad(nueva) {
+    Q = nueva;
+    aplicarCalidad();
+    const info = { name: qualityName(Q), ...Q };
+    for (const fn of avisosCalidad) fn(info);
+  }
+  /** Un ajuste suelto (prender el AO, el bloom…): la calidad queda personalizada. @param {Record<string, unknown>} q */
+  const cambiarCalidad = (q) => ponerCalidad(mergeQuality(Q, q));
+
   const motor = {
     renderer, scene, camera, controls, content, overlay, composer,
 
@@ -410,7 +430,11 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
      * @param {Partial<Preset['bloom']>} [b]
      */
     bloom(b) {
-      if (b) { P = mergePreset(P, { bloom: b }); aplicarBloom(b); }
+      if (b) {
+        const { enabled, ...look } = b;
+        if (enabled !== undefined) cambiarCalidad({ bloom: !!enabled });
+        if (Object.keys(look).length) { P = mergePreset(P, { bloom: look }); aplicarBloom(look); }
+      }
       return { enabled: bloomPass.enabled, strength: bloomPass.strength, radius: bloomPass.radius, threshold: bloomPass.threshold };
     },
 
@@ -421,9 +445,37 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
      * @param {Partial<Preset['ao']>} [a]
      */
     ao(a) {
-      if (a) { P = mergePreset(P, { ao: a }); aplicarAO(a); }
-      return { ...P.ao, enabled: aoPass.enabled };
+      if (a) {
+        const { enabled, samples, ...look } = a;
+        /** @type {Record<string, unknown>} */
+        const q = {};
+        if (enabled !== undefined) q.ao = !!enabled;
+        if (samples !== undefined) q.aoSamples = samples;
+        if (Object.keys(q).length) cambiarCalidad(q);
+        if (Object.keys(look).length) { P = mergePreset(P, { ao: look }); aplicarAO(look); }
+      }
+      return { ...P.ao, enabled: aoPass.enabled, samples: Q.aoSamples };
     },
+
+    /**
+     * La calidad, como en un juego: 'baja' | 'media' | 'alta' (ver QUALITY), o ajustes sueltos
+     * ({ antialias, shadows, shadowMapSize, ao, aoSamples, bloom, renderSamples, textures }) que
+     * pisan la actual y la vuelven 'personalizada'. Sin argumentos, devuelve { name, …ajustes }:
+     * un objeto plano, para guardarlo y volver a pasarlo. La resolución va aparte (resolution).
+     * @param {string | Record<string, unknown>} [q]
+     */
+    quality(q) {
+      if (typeof q === 'string') ponerCalidad(resolveQuality(q));
+      else if (q) {
+        const { name, ...ajustes } = q;
+        ponerCalidad(/** @type {any} */ (q).extends ? resolveQuality(ajustes) : mergeQuality(Q, ajustes));
+      }
+      return { name: qualityName(Q), ...Q };
+    },
+    /** La calidad para arrancar según la placa: dedicada 'alta', integrada o software 'baja'. */
+    suggestQuality() { return suggestQuality(motor.gpu({ print: false }).kind); },
+    /** Algo que corre cuando cambia la calidad (la app cambia sus texturas SD/HD). Devuelve cómo sacarlo. @param {(q: ReturnType<typeof motor.quality>) => void} fn */
+    onQualityChange(fn) { avisosCalidad.add(fn); return () => avisosCalidad.delete(fn); },
 
     /**
      * Encuadra la cámara en unos objetos, o en todo lo que hay.
@@ -470,7 +522,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
      * three-gpu-pathtracer la primera vez. `onProgress(fracción, muestras)`; `signal` lo corta.
      * @param {import('./pathtracer.js').RenderOptions} [opts]
      */
-    render(opts) { return pathTrace({ scene, camera, renderer, preset: () => P }, opts); },
+    render(opts) { return pathTrace({ scene, camera, renderer, preset: () => P, samples: Q.renderSamples }, opts); },
 
     /**
      * En qué placa se está dibujando: { name, vendor, kind, buffer, pixelRatio, maxMSAA, antialias }.
@@ -541,6 +593,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     /** @param {{ print?: boolean }} [o] */
     help(o) { return help('Engine — cómo se ve la escena', ENGINE_MEMBERS, o); },
   };
+  aplicarCalidad();
   if (resolucionInicial !== 1) motor.resolution(resolucionInicial);
   return motor;
 }
