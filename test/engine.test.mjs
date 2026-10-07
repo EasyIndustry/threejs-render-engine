@@ -9,6 +9,7 @@ import { memberNames } from '../src/help.js';
 import { classifyGpu, GPU_KIND_TEXT } from '../src/gpu.js';
 import { createAutoScale } from '../src/resolution.js';
 import { QUALITY, CUSTOM_QUALITY, resolveQuality, mergeQuality, qualityName, suggestQuality } from '../src/quality.js';
+import { sinAristas, sinAO, sinRender, sinContorno } from '../src/flags.js';
 
 /** n cuadros de `ms` cada uno; devuelve la última escala que cambió (o null). */
 const cuadros = (a, n, ms) => { let c = null; for (let i = 0; i < n; i++) { const r = a.sample(ms); if (r !== null) c = r; } return c; };
@@ -155,8 +156,32 @@ test('calidad sugerida según la placa', () => {
   assert.equal(suggestQuality('unknown'), 'media');
 });
 
+test('espejos y materiales de shader: fuera de las pasadas auxiliares y del render final', () => {
+  const malla = (material, extra = {}) => ({ userData: {}, isMesh: true, material, ...extra });
+  const estandar = { isMeshStandardMaterial: true };
+  const shader = { isShaderMaterial: true };
+  const espejo = malla(shader, { isReflector: true });
+  // un espejo (Reflector) no entra en aristas, AO ni render, sin que la app lo marque
+  assert.ok(sinAristas(espejo) && sinAO(espejo) && sinContorno(espejo) && sinRender(espejo));
+  // una pieza común entra en todo
+  const pieza = malla(estandar);
+  assert.ok(!sinAristas(pieza) && !sinAO(pieza) && !sinContorno(pieza) && !sinRender(pieza));
+  // las banderas van cada una a lo suyo
+  assert.ok(sinAristas(malla(estandar, { userData: { noEdge: true } })));
+  assert.ok(!sinAO(malla(estandar, { userData: { noEdge: true } })));
+  assert.ok(sinAO(malla(estandar, { userData: { noAO: true } })));
+  assert.ok(sinRender(malla(estandar, { userData: { noRender: true } })));
+  // el path tracer no entiende un material de shader propio, solo o en un array
+  assert.ok(sinRender(malla(shader)));
+  assert.ok(sinRender(malla([estandar, { isRawShaderMaterial: true }])));
+  assert.ok(!sinRender(malla([estandar, estandar])));
+  // lo que no es superficie, tampoco
+  assert.ok(sinRender({ userData: {}, isLine: true }));
+  assert.ok(!sinRender({ userData: {} })); // un grupo: se mira lo de adentro
+});
+
 test('lo puro no importa three ni el DOM', async () => {
-  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js', 'quality.js']) {
+  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js', 'quality.js', 'flags.js']) {
     const s = await fuente(f);
     assert.doesNotMatch(s, /^import .* from 'three/m, f);
     assert.doesNotMatch(s, /\b(document|window)\./, f);

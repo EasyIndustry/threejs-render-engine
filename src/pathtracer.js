@@ -9,8 +9,10 @@
 //   - el entorno del visor (PMREM) no es equirectangular: durante el render va un degradé
 //     cielo/suelo del preset;
 //   - la luz hemisférica no existe para él: ese relleno lo da el entorno;
-//   - líneas, grillas, sprites y lo marcado con `userData.noRender` no salen en la imagen.
+//   - líneas, grillas, sprites, espejos (Reflector), lo de material de shader propio y lo marcado
+//     con `userData.noRender` no salen en la imagen (ver flags.js).
 import * as THREE from 'three';
+import { sinRender } from './flags.js';
 
 /** @typedef {import('./presets.js').Preset} Preset */
 /**
@@ -114,8 +116,7 @@ export async function pathTrace(ctx, opts = {}) {
   /** @type {THREE.Mesh[]} */
   const multis = [];
   scene.traverse((o) => {
-    const fuera = o.userData.noRender || /** @type {any} */ (o).isLine || /** @type {any} */ (o).isPoints || /** @type {any} */ (o).isSprite;
-    if (fuera && o.visible) { o.visible = false; escondidos.push(o); return; }
+    if (o.visible && sinRender(/** @type {any} */ (o))) { o.visible = false; escondidos.push(o); return; }
     const mesh = /** @type {THREE.Mesh} */ (o);
     if (mesh.isMesh && o.visible && Array.isArray(mesh.material)) multis.push(mesh);
   });

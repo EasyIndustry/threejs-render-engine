@@ -79,12 +79,17 @@ three < 0.180). Las 0.0.25 en adelante piden three ≥ 0.185 y three-mesh-bvh �
 | | |
 |---|---|
 | `userData.noEdge` | el objeto no sale en el contorno fino (piso, grilla, cotas, guías) |
+| `userData.noAO` | el objeto no entra en la oclusión ambiental |
 | `userData.noRender` | el objeto no sale en el render final |
 | `motor.content` | un grupo para lo de la app (o directo en `motor.scene`) |
 | `motor.overlay` | una escena encima de todo y fuera del post-proceso: gizmos, manijas |
 | `motor.onFrame(fn)` | algo que corre en cada cuadro (etiquetas CSS2D, animaciones) |
+| `motor.onResize(fn)` | avisa cuando cambian los píxeles del visor (ventana o resolución): ahí se ajusta lo que la app dimensiona según el visor, como el reflejo de un espejo |
 
-En el render final no salen líneas, puntos ni sprites. La luz hemisférica no existe para el
+En el render final no salen líneas, puntos, sprites, espejos (`Reflector`) ni mallas con material de
+shader propio (el path tracer no los entiende: un espejo, ahí, es un material estándar con
+`metalness: 1, roughness: 0`). Los espejos tampoco entran en las aristas, la oclusión ambiental ni los contornos de selección:
+así cada uno cuesta un render extra por cuadro y no uno por pasada. La luz hemisférica no existe para el
 path tracer: ese relleno lo da un entorno degradé (`preset.render.sky` / `ground`).
 
 ## Pruebas

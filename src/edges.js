@@ -4,9 +4,10 @@
 //
 // La línea es el color del material del píxel, oscurecido (`darken`): se lee como un grabado,
 // no como un contorno negro parejo. Lo que tenga `userData.noEdge` (piso, grilla, cotas,
-// guías) no se contornea.
+// guías) no se contornea, y los espejos tampoco (ver flags.js).
 import * as THREE from 'three';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { sinAristas } from './flags.js';
 
 const EdgeShader = {
   uniforms: {
@@ -137,7 +138,7 @@ export function createEdgePass(renderer, scene, camera) {
     // lo que no es geometría de trabajo se esconde solo para este render interno
     /** @type {THREE.Object3D[]} */
     const escondidos = [];
-    scene.traverse((o) => { if (o.userData.noEdge && o.visible) { o.visible = false; escondidos.push(o); } });
+    scene.traverse((o) => { if (o.visible && sinAristas(o)) { o.visible = false; escondidos.push(o); } });
     const prevOverride = scene.overrideMaterial;
     const prevTarget = r.getRenderTarget();
     scene.overrideMaterial = normalMaterial;

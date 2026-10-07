@@ -28,6 +28,7 @@ import { classifyGpu, GPU_KIND_TEXT } from './gpu.js';
 import { QUALITY, CUSTOM_QUALITY, resolveQuality, mergeQuality, qualityName, suggestQuality } from './quality.js';
 import { createAutoScale } from './resolution.js';
 import { ENGINE_MEMBERS } from './members.js';
+import { sinAO, sinContorno } from './flags.js';
 
 export { PRESETS, resolvePreset, mergePreset, definePreset, ENGINE_MEMBERS, QUALITY, CUSTOM_QUALITY, resolveQuality, suggestQuality };
 
@@ -109,6 +110,20 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   /** @type {THREE.Mesh | null} */ let floor = null;
   /** @type {THREE.GridHelper | null} */ let grid = null;
 
+  /**
+   * Una pasada que vuelve a dibujar la escena, con lo que `fuera` dice escondido mientras corre.
+   * @param {{ render: (...a: any[]) => void }} pass @param {(o: any) => boolean} fuera
+   */
+  function escondiendo(pass, fuera) {
+    const original = pass.render.bind(pass);
+    pass.render = (...args) => {
+      /** @type {THREE.Object3D[]} */
+      const escondidos = [];
+      scene.traverse((o) => { if (o.visible && fuera(o)) { o.visible = false; escondidos.push(o); } });
+      try { original(...args); } finally { for (const o of escondidos) o.visible = true; }
+    };
+  }
+
   // ---------- post-proceso ----------
   // el post-proceso dibuja a texturas intermedias, que no tienen el antialiasing del canvas: sin
   // MSAA en ellas los bordes de las piezas quedan dentados
@@ -121,6 +136,9 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   // donde la luz del ambiente casi no llega. Justo después de la escena, antes de contornos y bloom.
   const aoPass = new GTAOPass(scene, camera, w0, h0);
   aoPass.enabled = false;
+  // GTAO vuelve a dibujar la escena (normales y profundidad): lo marcado con noAO y los espejos
+  // se esconden mientras tanto, o un espejo dibujaría su reflejo una vez más por cuadro
+  escondiendo(aoPass, sinAO);
   composer.addPass(aoPass);
   const edgePass = createEdgePass(renderer, scene, camera);
   composer.addPass(edgePass);
@@ -143,6 +161,8 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     o.overlayMaterial.blendSrc = THREE.OneFactor;
     o.overlayMaterial.blendDst = THREE.OneMinusSrcAlphaFactor;
     o.overlayMaterial.blendEquation = THREE.AddEquation;
+    // la máscara y la profundidad del contorno vuelven a dibujar la escena: sin los espejos
+    escondiendo(o, sinContorno);
     return o;
   }
   const seleccion = outlinePass(3, 1.2);
@@ -279,12 +299,21 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   }
 
   // ---------- tamaño ----------
+  /** @type {Set<(s: { width: number, height: number, pixelRatio: number, drawingWidth: number, drawingHeight: number }) => void>} */
+  const avisosTamano = new Set();
+  /** El tamaño del visor ahora: en CSS y en píxeles que se dibujan. */
+  function tamano() {
+    const [width, height] = medida();
+    const gl = renderer.getContext();
+    return { width, height, pixelRatio: renderer.getPixelRatio(), drawingWidth: gl.drawingBufferWidth, drawingHeight: gl.drawingBufferHeight };
+  }
   function ajustar() {
     const [w, h] = medida();
     renderer.setSize(w, h, !esCanvas);
     composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    if (avisosTamano.size) { const t = tamano(); for (const fn of avisosTamano) fn(t); }
   }
   const ro = new ResizeObserver(ajustar);
   ro.observe(container);
@@ -577,6 +606,15 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
 
     /** Algo que corre en cada cuadro, antes de dibujar (etiquetas, animaciones). Devuelve cómo sacarlo. @param {(dt: number) => void} fn */
     onFrame(fn) { alCuadro.add(fn); return () => alCuadro.delete(fn); },
+
+    /**
+     * Algo que corre cuando cambian los píxeles del visor: la ventana, el contenedor o la
+     * resolución (resolution, también la automática). Recibe { width, height, pixelRatio,
+     * drawingWidth, drawingHeight }: lo que la app dimensiona según el visor (el render target
+     * de un espejo) se ajusta acá. Devuelve cómo sacarlo.
+     * @param {(s: ReturnType<typeof tamano>) => void} fn
+     */
+    onResize(fn) { avisosTamano.add(fn); return () => avisosTamano.delete(fn); },
 
     /** Lo suelta todo: el loop, el post-proceso, el renderer. */
     dispose() {

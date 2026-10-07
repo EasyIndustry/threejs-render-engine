@@ -1,5 +1,18 @@
 # Cambios
 
+## 0.6.0
+
+- `render()` ya no falla si la escena tiene un espejo (`Reflector` de three) o una malla con material
+  de shader propio (`ShaderMaterial`, `RawShaderMaterial`): el path tracer no los entiende y quedan
+  afuera de la imagen, como las líneas y los sprites (#1).
+- La oclusión ambiental esconde lo marcado con `userData.noAO`, y los espejos se dejan afuera solos
+  de las pasadas auxiliares (AO, aristas y contornos de selección): cada pasada que vuelve a dibujar
+  la escena disparaba otra vez el reflejo (en calidad alta con una selección con detalle, 4 por
+  cuadro); ahora es uno (#2).
+- `motor.onResize(fn)`: avisa cuando cambian los píxeles del visor (la ventana, el contenedor o la
+  resolución, también la automática) con `{ width, height, pixelRatio, drawingWidth, drawingHeight }`,
+  para ajustar lo que la app dimensiona según el visor, como el render target de un espejo (#3).
+
 ## 0.5.0
 
 - **Calidad, como en un juego** (`src/quality.js`): lo que cuesta GPU va aparte de la apariencia.

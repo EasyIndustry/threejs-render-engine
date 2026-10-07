@@ -30,6 +30,7 @@ export const ENGINE_MEMBERS = [
   ['gpu({ print? })', "en qué placa se dibuja: { name, vendor, kind: 'discrete' | 'integrated' | 'software' | 'unknown', buffer, pixelRatio, maxMSAA, antialias }; la imprime en la consola"],
   ['resolution(value?, { min?, max?, fps? })', "con cuántos píxeles se dibuja el visor, en vivo: 1 nativa, 0.5 la mitad, o 'auto' (baja si no llega a los fps y sube si sobra); sin argumentos, cómo está"],
   ['onFrame(fn)', 'algo que corre en cada cuadro, antes de dibujar; devuelve cómo sacarlo'],
+  ['onResize(fn)', 'algo que corre cuando cambian los píxeles del visor (ventana o resolución): { width, height, pixelRatio, drawingWidth, drawingHeight }; devuelve cómo sacarlo'],
   ['dispose()', 'soltar todo: loop, post-proceso y renderer'],
   ['help()', 'esta tabla'],
 ];
