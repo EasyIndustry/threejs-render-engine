@@ -101,6 +101,12 @@ node --test
 Lo que dibuja se prueba a ojo en `examples/index.html` (servido por HTTP: `python3 -m
 http.server` en la raíz del repo y abrir `/examples/`).
 
+## Contribuir
+
+El motor es agnóstico: no entra la solución de una app, entra la herramienta que resuelve esa
+clase de problema para cualquier app. Qué entra y cómo se evalúa un pedido está en
+[`POLITICA.md`](POLITICA.md); cómo se contribuye, en [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Licencia
 
 MIT

@@ -3,15 +3,16 @@
 Este motor se vendoriza en varias apps. La pregunta antes de cada cambio no es "¿le sirve a
 la app que lo pidió?" sino "¿le sirve a cualquier app que muestre objetos en three.js?".
 
-## Agnóstico: qué entra y qué no
+**Primero, [`POLITICA.md`](POLITICA.md):** qué entra, cómo se evalúa un pedido y qué puede pasar
+con él. Un pedido de una app de casa pasa por el mismo filtro que uno de afuera.
 
-- **Entra:** cómo se ve una escena — luces, sombras, entorno, piso, contornos, modos de vista,
-  post-proceso, render final — y lo que hace falta para mostrarlo (encuadrar, fotos).
-- **No entra:** el modelo de la app (qué es una pieza, qué está seleccionado), sus materiales
-  (maderas, metales de un catálogo), ni textos de interfaz. Los materiales los pone la app en
-  sus mallas; el motor los respeta.
-- **Los valores de apariencia van en un preset** (`src/presets.js`), no escritos a mano en el
-  resto de `src/`. Un color de un cliente es un preset de ese cliente, no un default nuevo.
+## Cómo se pide algo
+
+- **Un pedido:** un issue con la plantilla *Pedido*. Contá el problema, no solo la solución, y a
+  qué otro tipo de app le serviría.
+- **Un error:** un issue con la plantilla *Error*, con cómo reproducirlo.
+- **Un PR:** mejor después de un issue `aceptado`, para no hacer trabajo que no va a entrar. La
+  plantilla del PR trae el checklist del contrato.
 
 ## El contrato
 
@@ -30,3 +31,4 @@ la app que lo pidió?" sino "¿le sirve a cualquier app que muestre objetos en t
    prueba lo exige).
 2. Después en `src/index.js` (o un módulo de `src/`), con su línea en `src/members.js`.
 3. Probado a ojo en `examples/index.html`, y lo puro con su prueba en `test/`.
+4. En el `CHANGELOG.md`, y si rompe algo, marcado **Ruptura** con cómo migrar.
