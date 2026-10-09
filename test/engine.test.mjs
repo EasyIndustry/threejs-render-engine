@@ -181,7 +181,7 @@ test('espejos y materiales de shader: fuera de las pasadas auxiliares y del rend
 });
 
 test('lo puro no importa three ni el DOM', async () => {
-  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js', 'quality.js', 'flags.js', 'view.js']) {
+  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js', 'quality.js', 'flags.js', 'view.js', 'gestures.js']) {
     const s = await fuente(f);
     assert.doesNotMatch(s, /^import .* from 'three/m, f);
     assert.doesNotMatch(s, /\b(document|window)\./, f);
@@ -203,7 +203,7 @@ test('la tabla de help() y la API del motor coinciden, en las dos direcciones', 
 test('la tabla de help() y motor.view coinciden, en las dos direcciones', async () => {
   const s = await fuente('index.js');
   const cuerpo = s.slice(s.indexOf('const view = {'), s.indexOf('\n  };', s.indexOf('const view = {')));
-  const api = new Set([...cuerpo.matchAll(/^ {4}([A-Za-z_$][\w$]*)\s*\(/gm)].map((m) => m[1]));
+  const api = new Set([...cuerpo.matchAll(/^ {4}(?:get |set )?([A-Za-z_$][\w$]*)\s*\(/gm)].map((m) => m[1]));
   const doc = new Set(ENGINE_MEMBERS.map(([sig]) => sig.match(/^view\.([A-Za-z_$][\w$]*)/)?.[1]).filter(Boolean));
   assert.ok(api.size > 0);
   for (const n of api) assert.ok(doc.has(n), `view.${n} está en la API pero no en la tabla de help()`);

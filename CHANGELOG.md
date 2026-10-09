@@ -15,9 +15,9 @@
   terminada). La matemática es pura (`src/view.js`) y está probada en Node.
 - Justo arriba o justo abajo la vista es exacta: `up` dice hacia dónde queda la pantalla, sin un
   `0.0001` escondido, y orbitar desde ahí (con un comando o con el mouse) no la hace girar.
-- Sección `camera` nueva en los presets: `{ duration, easing, damping }`. El `damping` de los
-  OrbitControls (0.12) ahora sale de ahí; con 0, sin inercia. Un preset propio que no la tiene
-  la toma de `studio`.
+- Sección `camera` nueva en los presets: `{ duration, easing, damping, margin }`: cuánto dura una
+  animación, con qué easing, la inercia al soltar (0.12, como tenían los OrbitControls; 0, sin
+  inercia) y el aire del encuadre. Un preset propio que no la tiene la toma de `studio`.
 - **Vistas con nombre y encuadre por caja** (#6). `VIEWS` (también `motor.VIEWS`): front, back,
   right, left, top, bottom e iso, cada una `{ dir, up }`; arriba y abajo con su propio `up`.
   `view.go(vista, { fit, margin, animate })` va a una vista y encuadra (`fit`: una caja
@@ -37,6 +37,29 @@
   cortar lo que queda entre ella y el objetivo, y la niebla se corre lo mismo. Siguen andando el
   AO, el contorno fino, la selección, el overlay, `snapshot()`, `onResize` y `render()` (el path
   tracer hace ortográfica). `get().zoom` queda en 1: el motor acerca con la distancia.
+- **La entrada del usuario es del motor** (#8): mouse, touch y teclado pasan por los mismos
+  comandos, así que los límites, el polo exacto y la ortográfica valen igual con el mouse.
+  `view.input({ scheme, zoomToCursor, orbitAround, keyboard })`: esquemas de gestos `three` (el
+  de antes, por defecto), `cad` (medio orbita, Shift + medio desplaza; el izquierdo y el derecho
+  quedan para la app), `blender`, o una tabla propia (`SCHEMES` dice la forma); en todos, un dedo
+  orbita y dos desplazan y pellizcan. `zoomToCursor`: la rueda acerca hacia el cursor.
+  `orbitAround`: alrededor del objetivo, de lo que está bajo el cursor (`'cursor'`) o de lo
+  seleccionado. `keyboard`: apagado por defecto (ningún listener); `true` usa `KEYS` (flechas
+  orbitan, Shift + flechas desplazan, + y −, el numpad a las vistas como en Blender), con el
+  foco en el visor; o una tabla propia. Encuadrar con F queda en la app.
+- **Entrada directa** (#8): `view.drive({ orbit, pan, zoom })` con velocidades por segundo (un
+  joystick, una SpaceMouse, un botón mantenido; `drive(null)` frena) y `view.nudge()` de un paso.
+  La app lee el dispositivo; el motor no.
+- **Quién se queda con el puntero** (#9): `view.claim(e => 'app' | 'camera')` se consulta antes de
+  cada gesto (si dice `'app'`, el gesto entero es de la app; si tira un error, de la cámara), y
+  `view.suspend(nombre)` bloquea la cámara con conteo hasta soltar (`view.suspended` dice
+  quién). Suspender a mitad de un gesto lo termina limpio. La app ya no necesita registrar
+  listeners en captura ni conocer el orden de los de three.
+- **Ruptura:** sin OrbitControls. `motor.controls` es lo que queda de ellos: `target` (cambiarlo y
+  llamar a `update()`), `enabled` (false bloquea como `view.suspend`) y `update()`. Lo demás
+  (`mouseButtons`, `minDistance`, `addEventListener`, …) pasa a `view.input()`, `view.limits()`
+  y `view.onStart` / `onEnd` / `onChange`. `{ controls: false }` sigue siendo sin ninguna
+  entrada del motor.
 - **Ruptura:** `motor.camera` ahora es la cámara que dibuja: la `PerspectiveCamera`, o la
   `OrthographicCamera` en ortográfica. Una app que guardó `motor.camera` en una variable sigue
   teniendo la de perspectiva; mejor leerla cada vez, o usar `motor.view`.

@@ -38,6 +38,7 @@
     <select id="vista"></select>
     <button id="encuadrar">encuadrar</button>
     <button id="proyeccion">ortográfica</button>
+    <select id="esquema"></select>
     <button id="guardar">guardar vista</button>
     <button id="volver">volver a la vista</button>
   </div>
@@ -92,6 +93,9 @@
       motor.view.projection(orto ? 'orthographic' : 'perspective');
       e.currentTarget.textContent = orto ? 'perspectiva' : 'ortográfica';
     };
+    const esquema = document.getElementById('esquema');
+    esquema.innerHTML = Object.keys(motor.SCHEMES).map((s) => `<option>${s}</option>`).join('');
+    esquema.onchange = () => motor.view.input({ scheme: esquema.value, zoomToCursor: esquema.value !== 'three' });
     let guardada = JSON.stringify(motor.view.get());
     document.getElementById('guardar').onclick = () => { guardada = JSON.stringify(motor.view.get()); };
     document.getElementById('volver').onclick = () => motor.view.set(JSON.parse(guardada), { animate: true });

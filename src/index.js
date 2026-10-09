@@ -12,7 +12,6 @@
 //
 // Cómo se ve sale de un PRESET (ver presets.js): un cliente nuevo es un preset, no código.
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -30,10 +29,13 @@ import { createAutoScale } from './resolution.js';
 import { ENGINE_MEMBERS } from './members.js';
 import { sinAO, sinContorno } from './flags.js';
 import * as V from './view.js';
+import * as G from './gestures.js';
+import { SCHEMES, KEYS } from './gestures.js';
 import { VIEWS } from './view.js';
 
 export { PRESETS, resolvePreset, mergePreset, definePreset, ENGINE_MEMBERS, QUALITY, CUSTOM_QUALITY, resolveQuality, suggestQuality };
 export { EASINGS, VIEWS } from './view.js';
+export { SCHEMES, KEYS } from './gestures.js';
 
 /** @typedef {import('./presets.js').Preset} Preset */
 /** @typedef {'render' | 'clay' | 'wireframe' | 'normals' | 'matcap'} Mode */
@@ -99,8 +101,6 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   let activa = /** @type {THREE.PerspectiveCamera | THREE.OrthographicCamera} */ (camera);
   /** En ortográfica, la distancia que da la escala (la cámara de verdad está más lejos). */
   let distanciaOrto = 1;
-  const controls = conControles ? new OrbitControls(camera, renderer.domElement) : null;
-  if (controls) controls.target.set(0, area * 0.1, 0);
 
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -218,7 +218,6 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   }
 
   function aplicarPreset() {
-    if (controls) { controls.enableDamping = P.camera.damping > 0; controls.dampingFactor = P.camera.damping; }
     scene.environmentIntensity = P.environment.intensity;
     renderer.toneMappingExposure = P.exposure;
 
@@ -368,8 +367,10 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   });
 
   // ---------- la cámara como valores planos (view.js) ----------
-  /** El objetivo: el de los OrbitControls, o uno propio si se creó sin ellos. */
-  const objetivo = controls ? controls.target : new THREE.Vector3(0, area * 0.1, 0);
+  /** Lo que mira la cámara: alrededor de esto orbita. */
+  const objetivo = new THREE.Vector3(0, area * 0.1, 0);
+  // sin la entrada del motor, la cámara queda como la deja la app
+  if (conControles) camera.lookAt(objetivo);
   /** Los límites como los pidió la app (floor: true es el piso del estudio, en 0). */
   let limitesPedidos = /** @type {Omit<V.ViewLimits, 'floor'> & { floor: number | boolean | null }} */ ({ ...V.NO_LIMITS });
   /** Los límites para la matemática: el piso, en altura de la cámara (más el near, para no cortarlo). */
@@ -378,14 +379,14 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     return /** @type {V.ViewLimits} */ ({ ...limitesPedidos, floor: f === null || f === false ? null : (f === true ? 0 : f) + camera.near });
   }
   const _dir = new THREE.Vector3();
-  /** El estado de la cámara ahora. Sin OrbitControls, el objetivo sale de hacia dónde mira. @returns {V.ViewState} */
+  /** El estado de la cámara ahora. Sin la entrada del motor, el objetivo sale de hacia dónde mira. @returns {V.ViewState} */
   function leer() {
     const c = activa, p = c.position;
     let t = objetivo;
-    if (!controls) t = _dir.set(0, 0, -1).applyQuaternion(c.quaternion).multiplyScalar(p.distanceTo(objetivo) || area).add(p);
+    if (!conControles) t = _dir.set(0, 0, -1).applyQuaternion(c.quaternion).multiplyScalar(p.distanceTo(objetivo) || area).add(p);
     /** @type {V.Vec3} */ let pos = [p.x, p.y, p.z];
     if (c === orto) {
-      // la escala es la distancia (el zoom de la cámara, si los OrbitControls lo tocaron, entra ahí)
+      // la escala es la distancia (si la app tocó el zoom de la cámara, entra ahí)
       const d = distanciaOrto / orto.zoom, k = d / (p.distanceTo(t) || 1);
       pos = [t.x + (p.x - t.x) * k, t.y + (p.y - t.y) * k, t.z + (p.z - t.z) * k];
     }
@@ -422,7 +423,6 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     for (const m of [aoPass.gtaoMaterial, aoPass.depthRenderMaterial]) { m.defines.PERSPECTIVE_CAMERA = c === camera ? 1 : 0; m.needsUpdate = true; }
     edgePass.camera = c;
     for (const o of [seleccion, ...detalles]) contornoPara(o);
-    if (controls) controls.object = c;
   }
   /** @param {OutlinePass} o */
   function contornoPara(o) {
@@ -432,18 +432,8 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     const [de, a] = activa === camera ? ['orthographicDepthToViewZ', 'perspectiveDepthToViewZ'] : ['perspectiveDepthToViewZ', 'orthographicDepthToViewZ'];
     if (m.fragmentShader.includes(de)) { m.fragmentShader = m.fragmentShader.replaceAll(de, a); m.needsUpdate = true; }
   }
-  /**
-   * Justo arriba o abajo. Ahí los OrbitControls no se actualizan solos: la sacarían del polo y la
-   * pantalla giraría. Se actualizan cuando el usuario la agarra (ver 'start').
-   */
-  let enPolo = false;
   /** @param {V.ViewState} s */
   function escribir(s) {
-    if (controls) {
-      // lo que le quedaba de inercia a los OrbitControls se descarta: si no, la movería después
-      const d = controls.enableDamping;
-      controls.enableDamping = false; controls.update(); controls.enableDamping = d;
-    }
     // la perspectiva sigue el estado también en ortográfica: volver no salta
     camera.position.set(...s.position);
     objetivo.set(...s.target);
@@ -458,7 +448,6 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       orto.lookAt(objetivo);
     }
     usarCamara(s.projection === 'orthographic' ? orto : camera);
-    enPolo = !(s.up[0] === 0 && s.up[1] === 1 && s.up[2] === 0);
   }
 
   // empieza y termina: una animación o el usuario moviéndola (con la inercia hasta que para)
@@ -488,7 +477,6 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     termina('anim');
     a.fin(ok);
   }
-  let usuario = false, soltado = false;
   /** @param {number} dt */
   function pasoVista(dt) {
     if (anim) {
@@ -498,32 +486,198 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       if (anim.t >= 1) terminarAnim(true);
       return;
     }
-    if (!controls || (enPolo && !usuario)) return;
-    const movio = controls.update();
-    // en ortográfica los OrbitControls acercan con el zoom de la cámara: pasa a la distancia
-    if (activa === orto && orto.zoom !== 1) {
-      const l = limitesPedidos;
-      ajustarOrto(Math.min(l.maxDistance, Math.max(l.minDistance, distanciaOrto / orto.zoom)));
-    }
-    if (usuario && soltado && !movio) { usuario = false; termina('user'); }
+    // la velocidad es por segundo de verdad, aunque el visor ande lento; un cuadro de más de medio
+    // segundo (la pestaña estuvo quieta) no hace saltar la cámara
+    if (manejo) aplicarManejo(Math.min(dt, 0.5));
+    if (hayPendiente()) aplicarPendiente(dt);
+    if (moviendo.has('user') && !punteros.size && !hayPendiente()) termina('user');
   }
-  if (controls) {
-    controls.addEventListener('start', () => {
-      empieza('user');
-      usuario = true; soltado = false;
-      terminarAnim(false);
-      if (enPolo) {
-        // los OrbitControls no saben girar en el polo: se la deja un pelo afuera, con la pantalla
-        // mirando para el mismo lado
-        const s = leer();
-        escribir(V.orbit(s, 0, V.angles(s).pitch > 0 ? -1e-4 : 1e-4));
-      }
-    });
-    controls.addEventListener('end', () => { soltado = true; });
-    controls.addEventListener('change', () => {
-      const f = limites().floor;
-      if (f !== null && activa === camera && camera.position.y < f) { camera.position.y = f; camera.lookAt(objetivo); }
-    });
+
+  // ---------- la entrada: mouse, touch, teclado (gestures.js) y lo que maneja la app ----------
+  const lienzo = renderer.domElement;
+  /** Cómo se navega (view.input). */
+  const entrada = {
+    /** @type {G.Scheme} */ scheme: G.scheme('three'), nombre: 'three',
+    zoomToCursor: false,
+    /** @type {'target' | 'cursor' | 'selection'} */ orbitAround: 'target',
+    /** @type {Readonly<Record<string, G.KeyCommand>> | null} */ teclas: null,
+  };
+  /** Lo que los gestos todavía no le aplicaron a la cámara: se aplica de a poco (la inercia). */
+  const pendiente = { yaw: 0, pitch: 0, panX: 0, panY: 0, zoom: 0, /** @type {[number, number] | undefined} */ at: undefined, /** @type {V.Vec3 | undefined} */ around: undefined };
+  const hayPendiente = () => Math.abs(pendiente.yaw) > 1e-4 || Math.abs(pendiente.pitch) > 1e-4 || Math.abs(pendiente.panX) > 1e-3 || Math.abs(pendiente.panY) > 1e-3 || Math.abs(pendiente.zoom) > 1e-6;
+  function vaciarPendiente() { Object.assign(pendiente, { yaw: 0, pitch: 0, panX: 0, panY: 0, zoom: 0 }); }
+  /** Píxeles del visor a unidades de la escena, en el plano del objetivo. @param {V.ViewState} s */
+  const unidadesDe = (s) => (2 * V.angles(s).distance * Math.tan((s.fov * Math.PI) / 360)) / medida()[1];
+  /** @param {number} dt */
+  function aplicarPendiente(dt) {
+    const k = G.dampingStep(P.camera.damping, dt), lim = limites();
+    let s = leer();
+    const yaw = pendiente.yaw * k, pitch = pendiente.pitch * k, z = pendiente.zoom * k;
+    if (yaw || pitch) s = V.orbit(s, yaw, pitch, { around: pendiente.around, limits: lim });
+    if (pendiente.panX || pendiente.panY) { const u = unidadesDe(s); s = V.pan(s, pendiente.panX * k * u, pendiente.panY * k * u, { limits: lim }); }
+    if (z) s = V.zoom(s, Math.exp(z), { at: pendiente.at, aspect: camera.aspect, limits: lim });
+    escribir(s);
+    for (const c of /** @type {const} */ (['yaw', 'pitch', 'panX', 'panY', 'zoom'])) pendiente[c] *= 1 - k;
+    if (!hayPendiente()) vaciarPendiente();
+  }
+
+  /** La entrada directa de la app (view.drive): velocidades por segundo. @type {{ orbit: [number, number], pan: [number, number], zoom: number } | null} */
+  let manejo = null;
+  /** @param {number} dt */
+  function aplicarManejo(dt) {
+    if (!manejo) return;
+    const lim = limites();
+    let s = leer();
+    if (manejo.orbit[0] || manejo.orbit[1]) s = V.orbit(s, manejo.orbit[0] * dt, manejo.orbit[1] * dt, { limits: lim });
+    if (manejo.pan[0] || manejo.pan[1]) { const u = unidadesDe(s); s = V.pan(s, manejo.pan[0] * dt * u, manejo.pan[1] * dt * u, { limits: lim }); }
+    if (manejo.zoom !== 1) s = V.zoom(s, manejo.zoom ** dt, { limits: lim });
+    escribir(s);
+  }
+
+  /** Los punteros del gesto de la cámara en curso, en píxeles del visor. @type {Map<number, { x: number, y: number }>} */
+  const punteros = new Map();
+  /** Los punteros que la app reclamó (view.claim): su gesto entero no es de la cámara. @type {Set<number>} */
+  const ajenos = new Set();
+  /** @type {{ action: G.Action | 'pan-zoom' } | null} */ let gesto = null;
+  /** @type {Set<(e: PointerEvent | WheelEvent) => unknown>} */ const filtros = new Set();
+  /** Los bloqueos de la app (view.suspend), con su nombre. @type {Map<symbol, string>} */ const bloqueos = new Map();
+  /** @param {{ clientX: number, clientY: number }} e */
+  const enLienzo = (e) => { const r = lienzo.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  /** @param {{ x: number, y: number }} p @returns {[number, number]} */
+  const ndc = (p) => { const r = lienzo.getBoundingClientRect(); return [(p.x / r.width) * 2 - 1, 1 - (p.y / r.height) * 2]; };
+  /** ¿La app se queda con este gesto? Un filtro que falla no rompe la cámara. @param {PointerEvent | WheelEvent} e */
+  function reclamado(e) {
+    for (const fn of filtros) {
+      try { if (fn(e) === 'app') return true; } catch (err) { console.error('view.claim: el filtro falló; el gesto queda para la cámara', err); }
+    }
+    return false;
+  }
+  function empiezaUsuario() { empieza('user'); terminarAnim(false); }
+  /** Corta el gesto en curso, limpio: sin lo pendiente, así al volver no salta. */
+  function cortarGesto() {
+    for (const id of punteros.keys()) { try { lienzo.releasePointerCapture(id); } catch { /* ya no estaba */ } }
+    punteros.clear();
+    gesto = null;
+    vaciarPendiente();
+  }
+
+  const _rayo = new THREE.Raycaster();
+  /** Lo que hay de la app bajo un punto del visor, o undefined. @param {{ x: number, y: number }} p @returns {V.Vec3 | undefined} */
+  function bajoElCursor(p) {
+    const [x, y] = ndc(p);
+    _rayo.setFromCamera(new THREE.Vector2(x, y), activa);
+    /** @param {THREE.Object3D | null} o */
+    const cuenta = (o) => { for (; o; o = o.parent) if (!o.visible || o.userData.noRender || o === estudio) return false; return true; };
+    const hit = _rayo.intersectObjects(scene.children, true).find((h) => /** @type {THREE.Mesh} */ (h.object).isMesh && cuenta(h.object));
+    return hit ? /** @type {V.Vec3} */ (hit.point.toArray()) : undefined;
+  }
+  /** Alrededor de qué orbita un gesto que empieza en `p`. @param {{ x: number, y: number }} p @returns {V.Vec3 | undefined} */
+  function pivote(p) {
+    if (entrada.orbitAround === 'cursor') return bajoElCursor(p);
+    if (entrada.orbitAround === 'selection' && seleccion.selectedObjects.length) {
+      const c = cajaDe(seleccion.selectedObjects);
+      if (!c.isEmpty()) return /** @type {V.Vec3} */ (c.getCenter(new THREE.Vector3()).toArray());
+    }
+    return undefined;
+  }
+
+  /** @param {PointerEvent} e */
+  function alBajar(e) {
+    if (bloqueos.size || !lienzo.isConnected) return;
+    if (reclamado(e)) { ajenos.add(e.pointerId); return; }
+    const p = enLienzo(e);
+    if (e.pointerType === 'touch') {
+      if (punteros.size >= 2) return;
+      const accion = punteros.size === 0 ? entrada.scheme.touch[1] : entrada.scheme.touch[2];
+      if (!accion) return;
+      punteros.set(e.pointerId, p);
+      gesto = { action: accion };
+    } else {
+      if (gesto) return; // ya hay un gesto con otro botón
+      const accion = G.mouseAction(entrada.scheme, e);
+      if (!accion) return;
+      punteros.set(e.pointerId, p);
+      gesto = { action: accion };
+      if (accion === 'dolly') pendiente.at = entrada.zoomToCursor ? ndc(p) : undefined;
+    }
+    if (gesto.action === 'orbit') pendiente.around = pivote(p);
+    // con el puntero capturado el pointerup llega siempre, aunque se suelte afuera del visor
+    try { lienzo.setPointerCapture(e.pointerId); } catch { /* el puntero ya no está */ }
+    empiezaUsuario();
+  }
+  /** @param {PointerEvent} e */
+  function alMover(e) {
+    const antes = punteros.get(e.pointerId);
+    if (!antes || !gesto) return;
+    const p = enLienzo(e);
+    const h = medida()[1];
+    if (gesto.action === 'pan-zoom' && punteros.size === 2) {
+      const [a, b] = [...punteros.values()];
+      const medio0 = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, d0 = Math.hypot(a.x - b.x, a.y - b.y);
+      punteros.set(e.pointerId, p);
+      const [c, d] = [...punteros.values()];
+      const medio = { x: (c.x + d.x) / 2, y: (c.y + d.y) / 2 }, d1 = Math.hypot(c.x - d.x, c.y - d.y);
+      pendiente.panX -= medio.x - medio0.x; pendiente.panY += medio.y - medio0.y;
+      if (d0 > 0 && d1 > 0) { pendiente.zoom += Math.log(d1 / d0); pendiente.at = ndc(medio); }
+      return;
+    }
+    punteros.set(e.pointerId, p);
+    const dx = p.x - antes.x, dy = p.y - antes.y;
+    if (gesto.action === 'orbit') { const [y, pt] = G.dragToOrbit(dx, dy, h); pendiente.yaw += y; pendiente.pitch += pt; }
+    else if (gesto.action === 'pan') { pendiente.panX -= dx; pendiente.panY += dy; }
+    else if (gesto.action === 'dolly') pendiente.zoom += Math.log(G.dragToZoom(dy, h));
+  }
+  /** @param {PointerEvent} e */
+  function alSoltar(e) {
+    if (ajenos.delete(e.pointerId)) return;
+    if (!punteros.delete(e.pointerId)) return;
+    if (!punteros.size) { gesto = null; return; }
+    // de dos dedos a uno: sigue con lo que hace un dedo
+    const accion = entrada.scheme.touch[1];
+    gesto = accion ? { action: accion } : null;
+    if (accion === 'orbit') pendiente.around = pivote([...punteros.values()][0]);
+  }
+  /** @param {WheelEvent} e */
+  function alRueda(e) {
+    if (bloqueos.size || entrada.scheme.wheel !== 'zoom' || reclamado(e)) return;
+    e.preventDefault();
+    pendiente.zoom += Math.log(G.wheelToZoom(e.deltaY, e.deltaMode, medida()[1]));
+    pendiente.at = entrada.zoomToCursor ? ndc(enLienzo(e)) : undefined;
+    empiezaUsuario();
+  }
+  /** El menú del botón derecho, solo si el derecho es de la cámara. @param {MouseEvent} e */
+  function alMenu(e) { if (G.mouseAction(entrada.scheme, { button: 2, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey: e.altKey, metaKey: e.metaKey })) e.preventDefault(); }
+  /** @param {KeyboardEvent} e */
+  function alTeclado(e) {
+    if (!entrada.teclas || bloqueos.size) return;
+    const cmd = G.keyAction(entrada.teclas, e);
+    if (!cmd) return;
+    e.preventDefault();
+    const animate = true;
+    if (cmd.orbit) view.orbit(cmd.orbit[0], cmd.orbit[1], { animate });
+    else if (cmd.pan) view.pan(cmd.pan[0], cmd.pan[1], { animate });
+    else if (cmd.zoom) view.zoom(cmd.zoom, { animate });
+    else if (cmd.go) view.go(cmd.go, { fit: false, animate });
+    else if (cmd.projection) view.projection(cmd.projection === 'toggle' ? (activa === orto ? 'perspective' : 'orthographic') : cmd.projection);
+  }
+  /** Prende o apaga el teclado: apagado, no hay ningún listener de teclado. @param {Readonly<Record<string, G.KeyCommand>> | null} t */
+  function ponerTeclas(t) {
+    if (!conControles) { entrada.teclas = t; return; }
+    if (t && !entrada.teclas) { lienzo.addEventListener('keydown', alTeclado); if (!lienzo.hasAttribute('tabindex')) { lienzo.tabIndex = 0; lienzo.dataset.motorTabindex = ''; } }
+    if (!t && entrada.teclas) { lienzo.removeEventListener('keydown', alTeclado); if ('motorTabindex' in lienzo.dataset) { lienzo.removeAttribute('tabindex'); delete lienzo.dataset.motorTabindex; } }
+    entrada.teclas = t;
+  }
+  const touchActionPrevio = lienzo.style.touchAction;
+  if (conControles) {
+    // el navegador no desplaza ni hace zoom de la página con los gestos sobre el visor
+    lienzo.style.touchAction = 'none';
+    lienzo.addEventListener('pointerdown', alBajar);
+    lienzo.addEventListener('pointermove', alMover);
+    lienzo.addEventListener('pointerup', alSoltar);
+    lienzo.addEventListener('pointercancel', alSoltar);
+    lienzo.addEventListener('lostpointercapture', alSoltar);
+    lienzo.addEventListener('wheel', alRueda, { passive: false });
+    lienzo.addEventListener('contextmenu', alMenu);
   }
 
   /** Lo que sigue a los relativos: si hay una animación, se suman a donde iba. */
@@ -547,11 +701,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       if (previa) previa.fin(false); else empieza('anim');
     });
   }
-  /** Píxeles del visor a unidades de la escena, en el plano del objetivo. */
-  const unidadesPorPixel = () => {
-    const s = base();
-    return (2 * V.angles(s).distance * Math.tan((s.fov * Math.PI) / 360)) / medida()[1];
-  };
+  const unidadesPorPixel = () => unidadesDe(base());
 
   /**
    * Lo que se encuadra: una caja { min, max } de la app, unos objetos, o todo el contenido.
@@ -655,11 +805,6 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
         if (floor !== undefined && floor !== null && typeof floor !== 'boolean' && !Number.isFinite(floor)) throw new TypeError('floor va true, false, una altura o null');
         const { floor: _f, ...validados } = V.mergeLimits({ ...limitesPedidos, floor: null }, resto);
         limitesPedidos = { ...validados, floor: floor === undefined ? limitesPedidos.floor : floor };
-        if (controls) {
-          controls.minDistance = limitesPedidos.minDistance; controls.maxDistance = limitesPedidos.maxDistance;
-          controls.minPolarAngle = ((90 - limitesPedidos.maxPitch) * Math.PI) / 180;
-          controls.maxPolarAngle = ((90 - limitesPedidos.minPitch) * Math.PI) / 180;
-        }
         const s = base(), c = V.constrain(s, limites());
         if (c !== s) mover(c, false);
       }
@@ -671,7 +816,126 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     onStart(fn) { avisosInicio.add(fn); return () => avisosInicio.delete(fn); },
     /** Algo que corre cuando la cámara se queda quieta (con la inercia ya terminada). Devuelve cómo sacarlo. @param {() => void} fn */
     onEnd(fn) { avisosFin.add(fn); return () => avisosFin.delete(fn); },
+
+    /**
+     * Cómo navega el usuario: `scheme` ('three' por defecto, 'cad', 'blender' o una tabla propia,
+     * ver SCHEMES), `zoomToCursor` (la rueda acerca hacia el cursor), `orbitAround` ('target', o
+     * 'cursor': lo que hay bajo el puntero, o 'selection': el centro de lo seleccionado) y
+     * `keyboard` (false por defecto: ningún listener; true: las teclas de KEYS, con el foco en el
+     * visor; o una tabla propia). Sin argumentos, cómo está.
+     * @param {{ scheme?: string | G.Scheme, zoomToCursor?: boolean, orbitAround?: 'target' | 'cursor' | 'selection', keyboard?: boolean | Record<string, G.KeyCommand> }} [o]
+     */
+    input(o) {
+      if (o) {
+        const conocidas = ['scheme', 'zoomToCursor', 'orbitAround', 'keyboard'];
+        for (const k of Object.keys(o)) if (!conocidas.includes(k)) throw new Error(`opción de entrada desconocida: ${k} (van ${conocidas.join(', ')})`);
+        if (o.orbitAround !== undefined && !['target', 'cursor', 'selection'].includes(o.orbitAround)) throw new Error(`orbitAround va 'target', 'cursor' o 'selection' (llegó ${o.orbitAround})`);
+        if (o.zoomToCursor !== undefined && typeof o.zoomToCursor !== 'boolean') throw new TypeError('zoomToCursor va true o false');
+        const sc = o.scheme === undefined ? null : G.scheme(o.scheme);
+        const teclas = o.keyboard === undefined ? undefined : o.keyboard === true ? G.KEYS : o.keyboard === false ? null : G.keyBindings(o.keyboard);
+        if (sc) { cortarGesto(); entrada.scheme = sc; entrada.nombre = typeof o.scheme === 'string' ? o.scheme : 'custom'; }
+        if (o.zoomToCursor !== undefined) entrada.zoomToCursor = o.zoomToCursor;
+        if (o.orbitAround !== undefined) entrada.orbitAround = o.orbitAround;
+        if (teclas !== undefined) ponerTeclas(teclas);
+      }
+      return { scheme: entrada.nombre, zoomToCursor: entrada.zoomToCursor, orbitAround: entrada.orbitAround, keyboard: !!entrada.teclas };
+    },
+    /**
+     * Entrada directa continua, para un joystick, una SpaceMouse o un botón mantenido: velocidades
+     * por segundo, `orbit` en grados, `pan` en píxeles del visor y `zoom` como factor (2: el
+     * doble de grande por segundo). Siguen hasta otro drive(); drive(null) frena. La app lee el
+     * dispositivo; el motor no.
+     * @param {{ orbit?: [number, number], pan?: [number, number], zoom?: number } | null} v
+     */
+    drive(v) {
+      if (v === null) { if (manejo) { manejo = null; termina('drive'); } return; }
+      const d = directa(v, 'drive');
+      if (!(d.zoom > 0)) throw new RangeError(`zoom va como un factor por segundo, mayor que 0 (llegó ${d.zoom})`);
+      const quieto = !d.orbit[0] && !d.orbit[1] && !d.pan[0] && !d.pan[1] && d.zoom === 1;
+      if (quieto) { view.drive(null); return; }
+      if (!manejo) { empieza('drive'); terminarAnim(false); }
+      manejo = d;
+    },
+    /**
+     * Un impulso de un solo paso: { orbit: [grados, grados], pan: [px, px], zoom: factor }.
+     * @param {{ orbit?: [number, number], pan?: [number, number], zoom?: number }} v @param {Animar} [o]
+     */
+    nudge(v, { animate } = {}) {
+      const d = directa(v, 'nudge');
+      const lim = limites();
+      let s = base();
+      if (d.orbit[0] || d.orbit[1]) s = V.orbit(s, d.orbit[0], d.orbit[1], { limits: lim });
+      if (d.pan[0] || d.pan[1]) { const u = unidadesDe(s); s = V.pan(s, d.pan[0] * u, d.pan[1] * u, { limits: lim }); }
+      if (d.zoom !== 1) s = V.zoom(s, d.zoom, { limits: lim });
+      return mover(s, animate);
+    },
+    /**
+     * Un filtro que el motor consulta antes de empezar un gesto (pointerdown o rueda): si
+     * devuelve 'app', ese gesto entero es de la app y la cámara no se mueve. Si tira un error,
+     * el gesto es de la cámara. Devuelve cómo sacarlo.
+     * @param {(e: PointerEvent | WheelEvent) => 'app' | 'camera' | undefined | null | void} fn
+     */
+    claim(fn) {
+      if (typeof fn !== 'function') throw new TypeError("claim(fn): fn devuelve 'app' o 'camera'");
+      filtros.add(fn);
+      return () => { filtros.delete(fn); };
+    },
+    /**
+     * Bloquea la cámara para el usuario (mouse, touch, teclado) hasta soltar: dos bloqueos a la
+     * vez no se pisan. Si había un gesto en curso termina limpio, sin salto al volver. Los
+     * comandos y drive() siguen andando. Devuelve cómo soltarlo (llamarlo dos veces no suelta otro).
+     * @param {string} [name] para ver en `suspended` quién bloquea
+     */
+    suspend(name = 'suspend') {
+      const k = Symbol(name);
+      bloqueos.set(k, String(name));
+      cortarGesto();
+      return () => { bloqueos.delete(k); };
+    },
+    /** Los nombres de los bloqueos que hay (vacío: el usuario mueve la cámara). */
+    get suspended() { return [...bloqueos.values()]; },
   };
+
+  /**
+   * Un drive o un nudge, validado y con lo que falta en cero.
+   * @param {unknown} v @param {string} quien
+   * @returns {{ orbit: [number, number], pan: [number, number], zoom: number }}
+   */
+  function directa(v, quien) {
+    if (!v || typeof v !== 'object') throw new TypeError(`${quien}() va con { orbit?, pan?, zoom? }`);
+    const o = /** @type {Record<string, any>} */ (v);
+    for (const k of Object.keys(o)) {
+      if (k === 'roll') throw new Error(`${quien}: roll no está (orbitar es girar la mesa, sin inclinar el horizonte)`);
+      if (!['orbit', 'pan', 'zoom'].includes(k)) throw new Error(`${quien}: clave desconocida ${k} (van orbit, pan, zoom)`);
+    }
+    /** @param {unknown} x @param {string} n @returns {[number, number]} */
+    const par = (x, n) => {
+      if (x === undefined) return [0, 0];
+      if (!Array.isArray(x) || x.length !== 2 || !x.every(Number.isFinite)) throw new TypeError(`${quien}: ${n} va como [x, y] con números finitos`);
+      return [x[0], x[1]];
+    };
+    const zoom = o.zoom ?? 1;
+    if (!Number.isFinite(zoom)) throw new TypeError(`${quien}: zoom va como un número`);
+    return { orbit: par(o.orbit, 'orbit'), pan: par(o.pan, 'pan'), zoom };
+  }
+
+  /**
+   * Lo que queda de los OrbitControls, para lo que la app ya hacía con ellos: `target` (el
+   * objetivo, un Vector3: cambiarlo y llamar a update()), `enabled` (false bloquea como
+   * view.suspend) y `update()`. Mejor usar motor.view.
+   */
+  let soltarControles = /** @type {(() => void) | null} */ (null);
+  const controls = conControles ? {
+    target: objetivo,
+    get enabled() { return !soltarControles; },
+    set enabled(v) {
+      if (!v && !soltarControles) soltarControles = view.suspend('controls.enabled');
+      else if (v && soltarControles) { soltarControles(); soltarControles = null; }
+    },
+    /** Apunta la cámara al target (si la app lo cambió a mano). */
+    update() { terminarAnim(false); escribir(V.merge(leer(), {})); return false; },
+    dispose() {},
+  } : null;
 
   aplicarPreset();
 
@@ -726,7 +990,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const cambiarCalidad = (q) => ponerCalidad(mergeQuality(Q, q));
 
   const motor = {
-    renderer, scene, controls, content, overlay, composer, view, VIEWS,
+    renderer, scene, controls, content, overlay, composer, view, VIEWS, SCHEMES, KEYS,
 
     /** La cámara que dibuja: la PerspectiveCamera, o la OrthographicCamera con view.projection('orthographic'). */
     get camera() { return activa; },
@@ -954,7 +1218,13 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       renderer.setAnimationLoop(null);
       terminarAnim(false);
       ro.disconnect();
-      controls?.dispose();
+      cortarGesto();
+      view.drive(null);
+      if (conControles) {
+        ponerTeclas(null);
+        for (const [t, fn] of /** @type {[string, any][]} */ ([['pointerdown', alBajar], ['pointermove', alMover], ['pointerup', alSoltar], ['pointercancel', alSoltar], ['lostpointercapture', alSoltar], ['wheel', alRueda], ['contextmenu', alMenu]])) lienzo.removeEventListener(t, fn);
+        lienzo.style.touchAction = touchActionPrevio;
+      }
       composer.passes.forEach((p) => p.dispose?.());
       Object.values(pisadores).forEach((m) => m.dispose());
       pmrem.dispose();

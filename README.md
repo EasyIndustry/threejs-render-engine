@@ -40,7 +40,10 @@ motor.help();                                   // todo lo que hay
   `onChange`, `onStart`, `onEnd`. Vistas con nombre (`motor.VIEWS`: front, back, right, left,
   top, bottom, iso, o un `{ dir, up }` propio) con `view.go()`, y encuadre con `view.fit()`:
   una caja `{ min, max }` o unos objetos, con el aspecto de la pantalla (no se corta en un
-  teléfono parado). Perspectiva u ortográfica con `view.projection()`, sin salto (el plano
+  teléfono parado). La navegación es del motor: `view.input({ scheme: 'cad' })` deja el
+  botón izquierdo para la app, `zoomToCursor`, `orbitAround: 'cursor'`, teclado opcional;
+  `view.drive()` para un joystick o un botón mantenido; y `view.claim()` / `view.suspend()`
+  para que un gizmo o un arrastre no pelee con la órbita. Perspectiva u ortográfica con `view.projection()`, sin salto (el plano
   del objetivo se ve del mismo tamaño), y todo sigue andando: contornos, selección, overlay,
   `snapshot()` y `render()`. Justo arriba la vista es exacta, sin ángulos mágicos. La duración, el
   easing, la inercia y el margen del encuadre están en el preset (`camera`).
@@ -58,6 +61,7 @@ motor.help();                                   // todo lo que hay
 src/
   index.js        createEngine: el estudio, el post-proceso, los modos y la API
   view.js         la cámara como valores planos: estado, orbitar, desplazar, acercar, límites (puro)
+  gestures.js     qué hace cada gesto y cada tecla: esquemas three, cad, blender (puro)
   presets.js      los presets (puro: sin three)
   edges.js        el contorno fino de geometría (profundidad + normales, 1px)
   pathtracer.js   el render final (three-gpu-pathtracer)
