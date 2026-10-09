@@ -760,6 +760,36 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     /** Mirar a un punto sin mover la cámara. @param {V.Vec3} point @param {Animar} [o] */
     lookAt(point, { animate } = {}) { return mover(V.lookAt(base(), point, { limits: limites() }), animate); },
     /**
+     * El rayo que sale por un punto del visor ([x, y] en píxeles, desde arriba a la izquierda),
+     * con la cámara que dibuja: { origin, dir } (dir unitaria). En ortográfica, todos paralelos,
+     * desde el plano cercano. Para elegir con el puntero sin tocar three.
+     * @param {[number, number]} at
+     */
+    ray(at) {
+      const [w, h] = medida(), p = enPixeles(at, 'ray');
+      const r = V.ray(leer(), [(p[0] / w) * 2 - 1, 1 - (p[1] / h) * 2], camera.aspect);
+      // en ortográfica la cámara de verdad está más atrás que la de la escala
+      if (activa === orto) { const atras = orto.position.distanceTo(objetivo) - distanciaOrto - orto.near; r.origin = /** @type {V.Vec3} */ (r.origin.map((x, i) => x - r.dir[i] * atras)); }
+      return r;
+    },
+    /**
+     * Dónde cae un punto del mundo en el visor: [x, y, depth], x e y en píxeles desde arriba a la
+     * izquierda, depth de 0 (plano cercano) a 1 (lejano); afuera de 0..1, detrás o fuera de alcance.
+     * @param {V.Vec3} point
+     */
+    project(point) {
+      const [w, h] = medida();
+      const [x, y, z] = V.project(leer(), V.vec3(point, 'project(punto)'), camera.aspect);
+      const atras = activa === orto ? orto.position.distanceTo(objetivo) - distanciaOrto : 0;
+      return /** @type {[number, number, number]} */ ([((x + 1) / 2) * w, ((1 - y) / 2) * h, (z + atras - activa.near) / (activa.far - activa.near)]);
+    },
+    /**
+     * Cuántas unidades de la escena mide un píxel del visor en ese punto (en ortográfica, lo
+     * mismo en todos lados): para una manija o un gizmo de tamaño constante en pantalla.
+     * @param {V.Vec3} point
+     */
+    worldPerPixel(point) { return V.worldPerPixel(leer(), V.vec3(point, 'worldPerPixel(punto)'), medida()[1]); },
+    /**
      * La proyección: 'perspective' u 'orthographic'. El cambio no salta: el plano del objetivo
      * se ve del mismo tamaño en las dos. Contornos, selección, overlay, snapshot() y render()
      * siguen andando. Sin argumentos, cuál está.
@@ -895,6 +925,12 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     /** Los nombres de los bloqueos que hay (vacío: el usuario mueve la cámara). */
     get suspended() { return [...bloqueos.values()]; },
   };
+
+  /** Un punto del visor en píxeles, validado. @param {unknown} at @param {string} quien @returns {[number, number]} */
+  function enPixeles(at, quien) {
+    if (!Array.isArray(at) || at.length !== 2 || !at.every(Number.isFinite)) throw new TypeError(`${quien}([x, y]) va en píxeles del visor (llegó ${JSON.stringify(at)})`);
+    return [at[0], at[1]];
+  }
 
   /**
    * Un drive o un nudge, validado y con lo que falta en cero.

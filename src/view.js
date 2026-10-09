@@ -445,3 +445,48 @@ export function go(s, view, { limits = NO_LIMITS } = {}) {
   const r = angles(s).distance;
   return constrain(conUp({ ...s, position: suma(s.target, por(v.dir, r / largo(v.dir))), up: v.up }), limits);
 }
+
+// ---------- de la pantalla al mundo y del mundo a la pantalla ----------
+
+/**
+ * El rayo que sale por un punto de la pantalla (normalizado, de −1 a 1, y hacia arriba). En
+ * perspectiva sale de la cámara; en ortográfica, del plano de la cámara, todos paralelos.
+ * @param {ViewState} s @param {[number, number]} at @param {number} aspect
+ * @returns {{ origin: Vec3, dir: Vec3 }}
+ */
+export function ray(s, at, aspect) {
+  const { forward, right, up } = basis(s);
+  const t = Math.tan((s.fov * RAD) / 2);
+  if (s.projection === 'orthographic') {
+    const medio = angles(s).distance * t;
+    return { origin: suma(s.position, suma(por(right, at[0] * medio * aspect), por(up, at[1] * medio))), dir: forward };
+  }
+  const d = suma(forward, suma(por(right, at[0] * t * aspect), por(up, at[1] * t)));
+  return { origin: [...s.position], dir: por(d, 1 / largo(d)) };
+}
+
+/**
+ * Dónde cae un punto del mundo en la pantalla (normalizado, de −1 a 1, y hacia arriba), y a qué
+ * profundidad: la distancia a lo largo de la vista desde la cámara (negativa: está detrás).
+ * @param {ViewState} s @param {Vec3} p @param {number} aspect @returns {[number, number, number]}
+ */
+export function project(s, p, aspect) {
+  const { forward, right, up } = basis(s);
+  const q = resta(p, s.position);
+  const z = punto(q, forward);
+  const t = Math.tan((s.fov * RAD) / 2);
+  const medio = s.projection === 'orthographic' ? angles(s).distance * t : z * t;
+  return [punto(q, right) / (medio * aspect), punto(q, up) / medio, z];
+}
+
+/**
+ * Cuántas unidades de la escena mide un píxel del visor en ese punto: en perspectiva depende de
+ * la profundidad; en ortográfica es la misma en todos lados. Lo que necesita una manija de
+ * tamaño constante en pantalla.
+ * @param {ViewState} s @param {Vec3} p @param {number} heightPx
+ */
+export function worldPerPixel(s, p, heightPx) {
+  const t = Math.tan((s.fov * RAD) / 2);
+  const z = s.projection === 'orthographic' ? angles(s).distance : punto(resta(p, s.position), basis(s).forward);
+  return (2 * Math.abs(z) * t) / Math.max(1, heightPx);
+}

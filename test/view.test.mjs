@@ -256,3 +256,30 @@ test('en ortográfica el encuadre no depende de la profundidad, y la escala es l
   assert.equal(interpolate(BASE, s, 0.5).projection, 'perspective');
   assert.equal(interpolate(BASE, s, 1).projection, 'orthographic');
 });
+
+import { ray, project, worldPerPixel } from '../src/view.js';
+
+test('rayo, proyección y tamaño de un píxel, en perspectiva y en ortográfica (#10)', () => {
+  const aspect = 16 / 9;
+  for (const s of [BASE, merge(BASE, { projection: 'orthographic' })]) {
+    const p = [12, 40, -7];
+    const [x, y, z] = project(s, p, aspect);
+    assert.ok(z > 0);
+    // el rayo por donde cae el punto pasa por el punto
+    const r = ray(s, [x, y], aspect);
+    const v = [0, 1, 2].map((i) => p[i] - r.origin[i]);
+    const t = v[0] * r.dir[0] + v[1] * r.dir[1] + v[2] * r.dir[2];
+    assert.ok(dist(p, r.origin.map((o, i) => o + r.dir[i] * t)) < 1e-9, s.projection);
+    assert.ok(Math.abs(Math.hypot(...r.dir) - 1) < 1e-12);
+    // el centro de la pantalla es el objetivo
+    assert.ok(Math.hypot(...project(s, s.target, aspect).slice(0, 2)) < 1e-12);
+  }
+  // perspectiva: el doble de lejos, el doble de grande el píxel; ortográfica: igual en todos lados
+  const { forward } = basis(BASE);
+  const a = BASE.target, b = BASE.target.map((x, i) => x + forward[i] * radio(BASE));
+  assert.ok(Math.abs(worldPerPixel(BASE, b, 700) / worldPerPixel(BASE, a, 700) - 2) < 1e-9);
+  const o = merge(BASE, { projection: 'orthographic' });
+  assert.ok(Math.abs(worldPerPixel(o, a, 700) - worldPerPixel(o, b, 700)) < 1e-15);
+  // y en el plano del objetivo las dos dan lo mismo: el cambio de proyección no cambia el tamaño
+  assert.ok(Math.abs(worldPerPixel(o, a, 700) - worldPerPixel(BASE, a, 700)) < 1e-12);
+});

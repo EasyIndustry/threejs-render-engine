@@ -55,6 +55,10 @@
   `view.suspend(nombre)` bloquea la cámara con conteo hasta soltar (`view.suspended` dice
   quién). Suspender a mitad de un gesto lo termina limpio. La app ya no necesita registrar
   listeners en captura ni conocer el orden de los de three.
+- **De la pantalla al mundo** (#10): `view.ray([x, y])` (el rayo por un píxel del visor, para
+  elegir con el puntero), `view.project(punto)` (`[x, y, depth]` en píxeles, para etiquetas
+  HTML) y `view.worldPerPixel(punto)` (para manijas de tamaño constante: en ortográfica es la
+  misma en todos lados). Siempre con la cámara que dibuja: la app no guarda una cámara.
 - **Ruptura:** sin OrbitControls. `motor.controls` es lo que queda de ellos: `target` (cambiarlo y
   llamar a `update()`), `enabled` (false bloquea como `view.suspend`) y `update()`. Lo demás
   (`mouseButtons`, `minDistance`, `addEventListener`, …) pasa a `view.input()`, `view.limits()`
