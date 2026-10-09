@@ -92,10 +92,13 @@ Las etiquetas están en `.github/labels.json` y se crean solas en GitHub (`.gith
 **La pregunta:** ¿le sirve a cualquier app que muestre objetos en three.js?
 
 - **Entra:** cómo se ve una escena — luces, sombras, entorno, piso, contornos, modos de vista,
-  post-proceso, render final — y lo que hace falta para mostrarlo (encuadrar, fotos).
+  post-proceso, render final — y lo que hace falta para mostrarlo y recorrerlo: la cámara
+  (vistas, encuadre, proyección, animaciones), la navegación con mouse, touch y teclado, la
+  entrada directa que la app le pasa (ejes de un dispositivo, botones) y fotos.
 - **No entra:** el modelo de la app (qué es una pieza, qué está seleccionado), sus materiales
   (maderas, metales de un catálogo), ni textos de interfaz. Los materiales los pone la app en
-  sus mallas; el motor los respeta.
+  sus mallas; el motor los respeta. Tampoco qué se encuadra, cuándo se bloquea la cámara ni
+  leer dispositivos (Gamepad, WebHID): la app decide y le pasa valores planos al motor.
 - **Un cliente es un preset**, no código: un color de un cliente no es un default nuevo.
 - **Puntos de extensión que ya hay:** presets (`definePreset`), marcas en `userData` (`noEdge`,
   `noAO`, `noRender`), `motor.content`, `motor.overlay`, `onFrame`, `onResize`,
