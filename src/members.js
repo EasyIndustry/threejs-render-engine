@@ -5,7 +5,7 @@
 export const ENGINE_MEMBERS = [
   ['renderer', 'el WebGLRenderer'],
   ['scene', 'la escena: la app cuelga lo suyo acá o en content'],
-  ['camera', 'la cámara (PerspectiveCamera)'],
+  ['camera', 'la cámara que dibuja: la PerspectiveCamera, o la OrthographicCamera en ortográfica (view.projection); mejor view que tocarla'],
   ['controls', 'los OrbitControls, o null si se creó con { controls: false }'],
   ['content', 'un grupo para lo de la app'],
   ['overlay', 'una escena que va encima de todo y fuera del post-proceso: gizmos, manijas'],
@@ -34,7 +34,8 @@ export const ENGINE_MEMBERS = [
   ['view.zoom(factor, { at?, animate? })', 'acercar (2: el doble de grande); at: [x, y] en píxeles del visor que queda quieto (hacia el cursor)'],
   ['view.dolly(distance, { animate? })', 'avanzar hacia el objetivo en unidades de la escena (negativo: retroceder), sin pasarlo'],
   ['view.lookAt(point, { animate? })', 'mirar a un punto sin mover la cámara'],
-  ['view.go(view, { fit?, margin?, animate? })', "ir a una vista ('front', 'top', 'iso', … o un { dir, up }) encuadrando fit: una caja { min, max }, unos objetos o todo (false: sin encuadrar)"],
+  ['view.go(view, { fit?, margin?, projection?, animate? })', "ir a una vista ('front', 'top', 'iso', … o un { dir, up }) encuadrando fit: una caja { min, max }, unos objetos o todo (false: sin encuadrar); projection: cambiarla al llegar"],
+  ['view.projection(p?)', "'perspective' | 'orthographic': el cambio no salta (el plano del objetivo se ve igual); sin argumentos, cuál está"],
   ['view.fit(boxOrObjects?, { margin?, animate? })', 'encuadrar sin cambiar de dirección una caja { min, max }, unos objetos o todo, con el aspecto de la pantalla'],
   ['view.limits({ minDistance?, maxDistance?, minPitch?, maxPitch?, floor? })', 'hasta dónde se mueve, por todos los caminos; floor: true no pasa debajo del piso; sin argumentos, cómo están'],
   ['view.onChange(fn)', 'algo que corre cuando cambia la cámara (una vez por cuadro, con el estado); devuelve cómo sacarlo'],

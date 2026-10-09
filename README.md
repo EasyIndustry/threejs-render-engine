@@ -40,7 +40,9 @@ motor.help();                                   // todo lo que hay
   `onChange`, `onStart`, `onEnd`. Vistas con nombre (`motor.VIEWS`: front, back, right, left,
   top, bottom, iso, o un `{ dir, up }` propio) con `view.go()`, y encuadre con `view.fit()`:
   una caja `{ min, max }` o unos objetos, con el aspecto de la pantalla (no se corta en un
-  teléfono parado). Justo arriba la vista es exacta, sin ángulos mágicos. La duración, el
+  teléfono parado). Perspectiva u ortográfica con `view.projection()`, sin salto (el plano
+  del objetivo se ve del mismo tamaño), y todo sigue andando: contornos, selección, overlay,
+  `snapshot()` y `render()`. Justo arriba la vista es exacta, sin ángulos mágicos. La duración, el
   easing, la inercia y el margen del encuadre están en el preset (`camera`).
 - **Render en un click.** `render()` hace path tracing de la escena como está, en un
   renderer aparte del tamaño pedido, y devuelve un PNG. El visor sigue andando mientras.

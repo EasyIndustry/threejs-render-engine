@@ -37,6 +37,7 @@
     <button data-orbit="45">↻ 45°</button>
     <select id="vista"></select>
     <button id="encuadrar">encuadrar</button>
+    <button id="proyeccion">ortográfica</button>
     <button id="guardar">guardar vista</button>
     <button id="volver">volver a la vista</button>
   </div>
@@ -86,6 +87,11 @@
     vista.innerHTML = '<option value="">vista…</option>' + Object.keys(motor.VIEWS).map((v) => `<option>${v}</option>`).join('');
     vista.onchange = () => { if (vista.value) motor.view.go(vista.value, { animate: true }); vista.value = ''; };
     document.getElementById('encuadrar').onclick = () => motor.view.fit(motor.selected.length ? motor.selected : undefined, { animate: true });
+    document.getElementById('proyeccion').onclick = (e) => {
+      const orto = motor.view.projection() === 'perspective';
+      motor.view.projection(orto ? 'orthographic' : 'perspective');
+      e.currentTarget.textContent = orto ? 'perspectiva' : 'ortográfica';
+    };
     let guardada = JSON.stringify(motor.view.get());
     document.getElementById('guardar').onclick = () => { guardada = JSON.stringify(motor.view.get()); };
     document.getElementById('volver').onclick = () => motor.view.set(JSON.parse(guardada), { animate: true });

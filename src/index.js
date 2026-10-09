@@ -89,6 +89,16 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(fov, w0 / h0, area / 250, area * 16);
   camera.position.set(area * 0.6, area * 0.48, area * 0.76);
+  /**
+   * La ortográfica (view.projection). Su escala sale de la perspectiva: media pantalla de alto
+   * mide distancia · tan(fov / 2) en el plano del objetivo. Se para lejos (a `area · 8` por lo
+   * menos), así acercarse no corta lo que está entre la cámara y el objetivo.
+   */
+  const orto = new THREE.OrthographicCamera(-1, 1, 1, -1, area / 250, area * 32);
+  /** La cámara que dibuja: la perspectiva o la ortográfica. */
+  let activa = /** @type {THREE.PerspectiveCamera | THREE.OrthographicCamera} */ (camera);
+  /** En ortográfica, la distancia que da la escala (la cámara de verdad está más lejos). */
+  let distanciaOrto = 1;
   const controls = conControles ? new OrbitControls(camera, renderer.domElement) : null;
   if (controls) controls.target.set(0, area * 0.1, 0);
 
@@ -134,7 +144,8 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(w0 * pr0, h0 * pr0, { type: THREE.HalfFloatType, samples: Q.antialias }));
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(w0, h0);
-  composer.addPass(new RenderPass(scene, camera));
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
   // oclusión ambiental (GTAO): los rincones, las uniones y lo que apoya en el piso se oscurecen
   // donde la luz del ambiente casi no llega. Justo después de la escena, antes de contornos y bloom.
   const aoPass = new GTAOPass(scene, camera, w0, h0);
@@ -153,7 +164,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
 
   /** @param {number} strength @param {number} thickness */
   function outlinePass(strength, thickness) {
-    const o = new OutlinePass(new THREE.Vector2(w0, h0), scene, camera);
+    const o = new OutlinePass(new THREE.Vector2(w0, h0), scene, activa);
     o.edgeStrength = strength;
     o.edgeThickness = thickness;
     o.edgeGlow = 0;
@@ -166,6 +177,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     o.overlayMaterial.blendEquation = THREE.AddEquation;
     // la máscara y la profundidad del contorno vuelven a dibujar la escena: sin los espejos
     escondiendo(o, sinContorno);
+    if (activa !== camera) contornoPara(o);
     return o;
   }
   const seleccion = outlinePass(3, 1.2);
@@ -317,6 +329,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    if (activa === orto) ajustarOrto(distanciaOrto);
     if (avisosTamano.size) { const t = tamano(); for (const fn of avisosTamano) fn(t); }
   }
   const ro = new ResizeObserver(ajustar);
@@ -342,12 +355,13 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     const dt = reloj.getDelta();
     if (auto) { const n = auto.sample(dt * 1000); if (n !== null) aplicarEscala(n); }
     pasoVista(dt);
+    ajustarNiebla();
     for (const fn of alCuadro) fn(dt);
     conModo(() => composer.render());
     if (overlay.children.length) {
       renderer.autoClear = false;
       renderer.clearDepth();
-      renderer.render(overlay, camera);
+      renderer.render(overlay, activa);
       renderer.autoClear = true;
     }
     avisarVista();
@@ -366,10 +380,57 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const _dir = new THREE.Vector3();
   /** El estado de la cámara ahora. Sin OrbitControls, el objetivo sale de hacia dónde mira. @returns {V.ViewState} */
   function leer() {
-    const p = camera.position;
+    const c = activa, p = c.position;
     let t = objetivo;
-    if (!controls) t = _dir.set(0, 0, -1).applyQuaternion(camera.quaternion).multiplyScalar(p.distanceTo(objetivo) || area).add(p);
-    return { position: [p.x, p.y, p.z], target: [t.x, t.y, t.z], up: [camera.up.x, camera.up.y, camera.up.z], fov: camera.fov, projection: 'perspective', zoom: camera.zoom };
+    if (!controls) t = _dir.set(0, 0, -1).applyQuaternion(c.quaternion).multiplyScalar(p.distanceTo(objetivo) || area).add(p);
+    /** @type {V.Vec3} */ let pos = [p.x, p.y, p.z];
+    if (c === orto) {
+      // la escala es la distancia (el zoom de la cámara, si los OrbitControls lo tocaron, entra ahí)
+      const d = distanciaOrto / orto.zoom, k = d / (p.distanceTo(t) || 1);
+      pos = [t.x + (p.x - t.x) * k, t.y + (p.y - t.y) * k, t.z + (p.z - t.z) * k];
+    }
+    return { position: pos, target: [t.x, t.y, t.z], up: [c.up.x, c.up.y, c.up.z], fov: camera.fov, projection: c === orto ? 'orthographic' : 'perspective', zoom: 1 };
+  }
+  /**
+   * La niebla se mide desde la cámara: en ortográfica la cámara está más lejos que la distancia
+   * que da la escala, y se corre lo mismo, así la niebla se ve igual que en perspectiva.
+   */
+  function ajustarNiebla() {
+    const f = /** @type {THREE.Fog | null} */ (scene.fog);
+    if (!f || !P.fog) return;
+    const extra = activa === orto ? orto.position.distanceTo(objetivo) - distanciaOrto : 0;
+    f.near = P.fog.near * area + extra;
+    f.far = P.fog.far * area + extra;
+  }
+  /** La ortográfica con la escala de esa distancia, y el aspecto del visor. @param {number} d */
+  function ajustarOrto(d) {
+    distanciaOrto = d;
+    const h = d * Math.tan((camera.fov * Math.PI) / 360), a = camera.aspect;
+    Object.assign(orto, { top: h, bottom: -h, left: -h * a, right: h * a, zoom: 1, near: camera.near, far: Math.max(d, area * 8) + area * 16 });
+    orto.updateProjectionMatrix();
+  }
+  /**
+   * Cambia la cámara que dibuja, y con ella la de cada pase: los que leen profundidad la
+   * linealizan distinto en ortográfica.
+   * @param {THREE.PerspectiveCamera | THREE.OrthographicCamera} c
+   */
+  function usarCamara(c) {
+    if (c === activa) return;
+    activa = c;
+    renderPass.camera = c;
+    aoPass.camera = c;
+    for (const m of [aoPass.gtaoMaterial, aoPass.depthRenderMaterial]) { m.defines.PERSPECTIVE_CAMERA = c === camera ? 1 : 0; m.needsUpdate = true; }
+    edgePass.camera = c;
+    for (const o of [seleccion, ...detalles]) contornoPara(o);
+    if (controls) controls.object = c;
+  }
+  /** @param {OutlinePass} o */
+  function contornoPara(o) {
+    o.renderCamera = activa;
+    // OutlinePass escribe la función de profundidad en su shader al crearse
+    const m = o.prepareMaskMaterial;
+    const [de, a] = activa === camera ? ['orthographicDepthToViewZ', 'perspectiveDepthToViewZ'] : ['perspectiveDepthToViewZ', 'orthographicDepthToViewZ'];
+    if (m.fragmentShader.includes(de)) { m.fragmentShader = m.fragmentShader.replaceAll(de, a); m.needsUpdate = true; }
   }
   /**
    * Justo arriba o abajo. Ahí los OrbitControls no se actualizan solos: la sacarían del polo y la
@@ -383,11 +444,20 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       const d = controls.enableDamping;
       controls.enableDamping = false; controls.update(); controls.enableDamping = d;
     }
+    // la perspectiva sigue el estado también en ortográfica: volver no salta
     camera.position.set(...s.position);
     objetivo.set(...s.target);
     camera.up.set(...s.up);
     if (camera.fov !== s.fov) { camera.fov = s.fov; camera.updateProjectionMatrix(); }
     camera.lookAt(objetivo);
+    if (s.projection === 'orthographic') {
+      const d = camera.position.distanceTo(objetivo);
+      ajustarOrto(d);
+      orto.position.copy(camera.position).sub(objetivo).multiplyScalar(Math.max(d, area * 8) / d).add(objetivo);
+      orto.up.copy(camera.up);
+      orto.lookAt(objetivo);
+    }
+    usarCamara(s.projection === 'orthographic' ? orto : camera);
     enPolo = !(s.up[0] === 0 && s.up[1] === 1 && s.up[2] === 0);
   }
 
@@ -430,6 +500,11 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     }
     if (!controls || (enPolo && !usuario)) return;
     const movio = controls.update();
+    // en ortográfica los OrbitControls acercan con el zoom de la cámara: pasa a la distancia
+    if (activa === orto && orto.zoom !== 1) {
+      const l = limitesPedidos;
+      ajustarOrto(Math.min(l.maxDistance, Math.max(l.minDistance, distanciaOrto / orto.zoom)));
+    }
     if (usuario && soltado && !movio) { usuario = false; termina('user'); }
   }
   if (controls) {
@@ -447,7 +522,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     controls.addEventListener('end', () => { soltado = true; });
     controls.addEventListener('change', () => {
       const f = limites().floor;
-      if (f !== null && camera.position.y < f) { camera.position.y = f; camera.lookAt(objetivo); }
+      if (f !== null && activa === camera && camera.position.y < f) { camera.position.y = f; camera.lookAt(objetivo); }
     });
   }
 
@@ -535,13 +610,24 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     /** Mirar a un punto sin mover la cámara. @param {V.Vec3} point @param {Animar} [o] */
     lookAt(point, { animate } = {}) { return mover(V.lookAt(base(), point, { limits: limites() }), animate); },
     /**
+     * La proyección: 'perspective' u 'orthographic'. El cambio no salta: el plano del objetivo
+     * se ve del mismo tamaño en las dos. Contornos, selección, overlay, snapshot() y render()
+     * siguen andando. Sin argumentos, cuál está.
+     * @param {V.Projection} [p]
+     */
+    projection(p) {
+      if (p !== undefined) mover(V.merge(base(), { projection: p }), false);
+      return activa === orto ? 'orthographic' : 'perspective';
+    },
+    /**
      * Ir a una vista: un nombre de VIEWS ('front', 'top', 'iso', …) o un { dir, up } propio, y
      * encuadrar: `fit` es una caja { min, max } o unos objetos (por defecto, todo el contenido;
      * false: sin encuadrar, a la misma distancia). `margin`: 1.15 deja la caja en 1/1.15 de la pantalla.
-     * @param {string | V.ViewDirection} name @param {Animar & { fit?: V.Box | THREE.Object3D[] | false, margin?: number }} [o]
+     * `projection`: además, cambiar de proyección al llegar ('orthographic' para una vista de plano).
+     * @param {string | V.ViewDirection} name @param {Animar & { fit?: V.Box | THREE.Object3D[] | false, margin?: number, projection?: V.Projection }} [o]
      */
-    go(name, { fit, margin, animate } = {}) {
-      const s = base();
+    go(name, { fit, margin, projection, animate } = {}) {
+      const s = projection === undefined ? base() : V.merge(base(), { projection });
       if (fit === false) return mover(V.go(s, name, { limits: limites() }), animate);
       const b = cajaPlana(fit);
       if (!b) return mover(V.go(s, name, { limits: limites() }), animate);
@@ -640,7 +726,10 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const cambiarCalidad = (q) => ponerCalidad(mergeQuality(Q, q));
 
   const motor = {
-    renderer, scene, camera, controls, content, overlay, composer, view, VIEWS,
+    renderer, scene, controls, content, overlay, composer, view, VIEWS,
+
+    /** La cámara que dibuja: la PerspectiveCamera, o la OrthographicCamera con view.projection('orthographic'). */
+    get camera() { return activa; },
 
     /** El preset que está puesto (una copia: para cambiarlo, setPreset). */
     get preset() { return structuredClone(P); },
@@ -780,6 +869,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
         composer.setPixelRatio(1);
         composer.setSize(W, H);
         camera.aspect = W / H; camera.updateProjectionMatrix();
+        if (activa === orto) ajustarOrto(distanciaOrto);
         conModo(() => composer.render());
         return renderer.domElement.toDataURL(type, quality);
       } finally {
@@ -794,7 +884,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
      * three-gpu-pathtracer la primera vez. `onProgress(fracción, muestras)`; `signal` lo corta.
      * @param {import('./pathtracer.js').RenderOptions} [opts]
      */
-    render(opts) { return pathTrace({ scene, camera, renderer, preset: () => P, samples: Q.renderSamples }, opts); },
+    render(opts) { return pathTrace({ scene, camera: activa, renderer, preset: () => P, samples: Q.renderSamples }, opts); },
 
     /**
      * En qué placa se está dibujando: { name, vendor, kind, buffer, pixelRatio, maxMSAA, antialias }.

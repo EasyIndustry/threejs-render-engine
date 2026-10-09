@@ -2,6 +2,10 @@
 // la matemática de moverla — orbitar, desplazar, acercar, mirar —, los límites y la interpolación
 // de las animaciones. El motor (index.js) la aplica a la cámara de three.
 //
+// En ortográfica la escala sale igual que en perspectiva: lo que mide `distance · tan(fov / 2)`
+// en el plano del objetivo es media pantalla de alto. Así el cambio de proyección no salta, y
+// acercar, desplazar y encuadrar son la misma cuenta (acercar achica esa distancia).
+//
 // Arriba es +y. Orbitar es girar la mesa: la guiñada (yaw) gira alrededor del eje vertical y el
 // cabeceo (pitch) sube o baja la cámara sin inclinar el horizonte. Justo arriba o justo abajo
 // (en los polos) no hay horizonte que diga hacia dónde queda la pantalla: lo dice `up`. En el
@@ -296,7 +300,10 @@ export function merge(base, over) {
     if (!(over.fov > 0 && over.fov < 180)) throw new RangeError(`fov va en grados, entre 0 y 180 (llegó ${over.fov})`);
     s.fov = over.fov;
   }
-  if (over.projection !== undefined && over.projection !== 'perspective') throw new Error(`proyección no soportada todavía: ${over.projection} (va 'perspective')`);
+  if (over.projection !== undefined) {
+    if (over.projection !== 'perspective' && over.projection !== 'orthographic') throw new Error(`proyección desconocida: ${over.projection} (van 'perspective', 'orthographic')`);
+    s.projection = over.projection;
+  }
   if (over.zoom !== undefined) {
     if (!(over.zoom > 0) || !Number.isFinite(over.zoom)) throw new RangeError(`zoom va mayor que 0 (llegó ${over.zoom})`);
     s.zoom = over.zoom;
@@ -386,11 +393,11 @@ export function box(b) {
  * A qué distancia del centro de la caja, mirando desde `dir`, entra la caja entera en la
  * pantalla: los 8 vértices, con el fov que limite (el vertical o el horizontal, según el aspecto)
  * y con `margin` (1.15: la caja ocupa 1/1.15 de la pantalla en el eje que más la llena). `near`:
- * lo más cerca que puede quedar el vértice más cercano.
+ * lo más cerca que puede quedar el vértice más cercano. En ortográfica la profundidad no cuenta.
  * @param {Box} b @param {Vec3} dir @param {Vec3} up
- * @param {{ fov: number, aspect: number, margin?: number, near?: number }} o
+ * @param {{ fov: number, aspect: number, margin?: number, near?: number, projection?: Projection }} o
  */
-export function fitDistance(b, dir, up, { fov, aspect, margin = 1.15, near = 0 }) {
+export function fitDistance(b, dir, up, { fov, aspect, margin = 1.15, near = 0, projection = 'perspective' }) {
   if (!(margin > 0)) throw new RangeError(`margin va mayor que 0 (llegó ${margin})`);
   if (!(aspect > 0)) throw new RangeError(`aspect va mayor que 0 (llegó ${aspect})`);
   const c = mezcla(b.min, b.max, 0.5);
@@ -403,11 +410,11 @@ export function fitDistance(b, dir, up, { fov, aspect, margin = 1.15, near = 0 }
     const p = /** @type {Vec3} */ ([i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]]);
     const q = resta(p, c);
     // la cámara está en c − forward·d: la profundidad del vértice es d + q·forward
-    const z = punto(q, forward);
+    const z = projection === 'orthographic' ? 0 : punto(q, forward);
     d = Math.max(d, (Math.abs(punto(q, right)) * margin) / th - z, (Math.abs(punto(q, arriba)) * margin) / tv - z);
     delante = Math.max(delante, -z);
   }
-  return Math.max(d, delante + near);
+  return projection === 'orthographic' ? d : Math.max(d, delante + near);
 }
 
 /**
@@ -424,7 +431,7 @@ export function fit(s, b, { aspect, margin, near, view, limits = NO_LIMITS }) {
   // en un polo, la pantalla sigue mirando para el mismo lado (o para el de la vista)
   const up = v ? v.up : desdeAngulos(s.target, 1, a.yaw, a.pitch).up;
   const c = mezcla(b.min, b.max, 0.5);
-  const d = fitDistance(b, dir, up, { fov: s.fov, aspect, margin, near });
+  const d = fitDistance(b, dir, up, { fov: s.fov, aspect, margin, near, projection: s.projection });
   const out = conUp({ ...s, target: c, position: suma(c, por(dir, d / largo(dir))), up });
   return constrain(out, limits);
 }

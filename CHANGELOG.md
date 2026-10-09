@@ -29,6 +29,17 @@
   8 vértices de la caja, con un margen (`preset.camera.margin`, 1.15). `frame(objects)` es
   `view.fit(objects)`: el encuadre queda más justo que antes. Sin objetos, encuadra las mallas
   visibles sin el estudio ni lo marcado con `userData.noRender` (guías, cotas).
+- **Perspectiva y ortográfica** (#7): `view.projection('orthographic' | 'perspective')`, y
+  `view.go('front', { projection: 'orthographic' })` en un paso (cambia al llegar). El cambio no
+  salta: en ortográfica media pantalla de alto mide `distancia · tan(fov / 2)` en el plano del
+  objetivo, igual que en perspectiva, así que acercar, desplazar y encuadrar son la misma cuenta
+  (en ortográfica, acercar achica esa distancia). La cámara ortográfica se para lejos, para no
+  cortar lo que queda entre ella y el objetivo, y la niebla se corre lo mismo. Siguen andando el
+  AO, el contorno fino, la selección, el overlay, `snapshot()`, `onResize` y `render()` (el path
+  tracer hace ortográfica). `get().zoom` queda en 1: el motor acerca con la distancia.
+- **Ruptura:** `motor.camera` ahora es la cámara que dibuja: la `PerspectiveCamera`, o la
+  `OrthographicCamera` en ortográfica. Una app que guardó `motor.camera` en una variable sigue
+  teniendo la de perspectiva; mejor leerla cada vez, o usar `motor.view`.
 
 ## 0.6.0
 

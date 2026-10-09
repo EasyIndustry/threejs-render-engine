@@ -95,6 +95,13 @@ export async function pathTrace(ctx, opts = {}) {
   const base = /** @type {THREE.PerspectiveCamera} */ (opts.camera ?? ctx.camera);
   const camera = base.clone();
   if (camera.isPerspectiveCamera) { camera.aspect = width / height; camera.updateProjectionMatrix(); }
+  else if (/** @type {any} */ (camera).isOrthographicCamera) {
+    // la misma altura, con el ancho de la imagen pedida
+    const o = /** @type {THREE.OrthographicCamera} */ (/** @type {unknown} */ (camera));
+    const h = (o.top - o.bottom) / 2, cy = (o.top + o.bottom) / 2, cx = (o.left + o.right) / 2;
+    o.left = cx - (h * width) / height; o.right = cx + (h * width) / height; o.top = cy + h; o.bottom = cy - h;
+    o.updateProjectionMatrix();
+  }
 
   const cielo = new GradientEquirectTexture(256);
   cielo.topColor.set(p.render.sky);

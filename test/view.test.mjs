@@ -27,7 +27,8 @@ test('merge(get()) no mueve nada, y el estado viaja por JSON igual', () => {
   assert.deepEqual(s.position, BASE.position);
   assert.throws(() => merge(BASE, { posicion: [0, 0, 0] }), /clave de vista desconocida/);
   assert.throws(() => merge(BASE, { position: [0, NaN, 0] }), /números finitos/);
-  assert.throws(() => merge(BASE, { projection: 'orthographic' }), /no soportada todavía/);
+  assert.equal(merge(BASE, { projection: 'orthographic' }).projection, 'orthographic');
+  assert.throws(() => merge(BASE, { projection: 'isometrica' }), /proyección desconocida/);
 });
 
 test('orbit(90, 0) cuatro veces vuelve a la posición inicial', () => {
@@ -232,4 +233,26 @@ test('las vistas: la tabla, las propias y los errores', () => {
   assert.throws(() => box({ min: [0, 0], max: [1, 1, 1] }), /\[x, y, z\]/);
   // una caja chata (un plano) también entra
   assert.ok(fitDistance({ min: [-10, 0, -10], max: [10, 0, 10] }, [0, 0, 1], [0, 1, 0], { fov: 38, aspect: 1 }) > 0);
+});
+
+test('en ortográfica el encuadre no depende de la profundidad, y la escala es la de perspectiva', () => {
+  const o = merge(BASE, { projection: 'orthographic' });
+  const aspect = 9 / 16;
+  const s = fit(o, CAJA, { aspect, margin: 1.15, view: 'iso' });
+  // en ortográfica: x = (q·right) / (d·tan(fov/2)·aspect), sin dividir por la profundidad
+  const { right, up } = basis(s);
+  const medio = radio(s) * Math.tan((s.fov * Math.PI) / 360);
+  let lleno = 0;
+  for (const v of vertices(CAJA)) {
+    const q = [0, 1, 2].map((i) => v[i] - s.target[i]);
+    const x = (q[0] * right[0] + q[1] * right[1] + q[2] * right[2]) / (medio * aspect);
+    const y = (q[0] * up[0] + q[1] * up[1] + q[2] * up[2]) / medio;
+    lleno = Math.max(lleno, Math.abs(x), Math.abs(y));
+  }
+  assert.ok(Math.abs(lleno - 1 / 1.15) < 1e-9);
+  // más cerca que en perspectiva: en perspectiva lo de adelante se agranda
+  assert.ok(radio(s) < radio(fit(BASE, CAJA, { aspect, margin: 1.15, view: 'iso' })));
+  // la animación cambia de proyección al llegar, no en el camino
+  assert.equal(interpolate(BASE, s, 0.5).projection, 'perspective');
+  assert.equal(interpolate(BASE, s, 1).projection, 'orthographic');
 });

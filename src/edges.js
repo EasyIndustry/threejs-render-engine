@@ -45,10 +45,19 @@ const EdgeShader = {
     uniform int debugMode;
     varying vec2 vUv;
 
+    // la profundidad del búfer a z de vista: en ortográfica es lineal
+    float viewZ(float d) {
+      #ifdef ORTHOGRAPHIC
+        return orthographicDepthToViewZ(d, cameraNear, cameraFar);
+      #else
+        return perspectiveDepthToViewZ(d, cameraNear, cameraFar);
+      #endif
+    }
+
     // cuánto saltan profundidad y normal respecto de los 4 vecinos, contra los umbrales (>=1: arista)
     float edgeScore(vec2 uv, vec2 texel) {
       float d0 = texture2D(tDepth, uv).x;
-      float z0 = perspectiveDepthToViewZ(d0, cameraNear, cameraFar);
+      float z0 = viewZ(d0);
       vec3 n0 = normalize(texture2D(tNormal, uv).xyz * 2.0 - 1.0);
       float depthDiff = 0.0;
       float normalDiff = 0.0;
@@ -59,7 +68,7 @@ const EdgeShader = {
       offs[3] = vec2(0.0, -texel.y);
       for (int i = 0; i < 4; i++) {
         vec2 uv2 = uv + offs[i];
-        float z = perspectiveDepthToViewZ(texture2D(tDepth, uv2).x, cameraNear, cameraFar);
+        float z = viewZ(texture2D(tDepth, uv2).x);
         vec3 n = normalize(texture2D(tNormal, uv2).xyz * 2.0 - 1.0);
         depthDiff += abs(z0 - z);
         normalDiff += 1.0 - dot(n0, n);
@@ -119,7 +128,9 @@ export function createEdgePass(renderer, scene, camera) {
   material.uniforms.resolution.value.set(w, h);
   const fsQuad = new FullScreenQuad(material);
 
-  const pass = /** @type {Pass & { uniforms: Record<string, THREE.IUniform>, setSize: (w: number, h: number) => void }} */ (new Pass());
+  const pass = /** @type {Pass & { uniforms: Record<string, THREE.IUniform>, setSize: (w: number, h: number) => void, camera: THREE.Camera & { near: number, far: number } }} */ (new Pass());
+  /** La cámara con la que se dibuja (el motor la cambia al pasar a ortográfica). */
+  pass.camera = camera;
   pass.name = 'EdgesPass';
   pass.needsSwap = true;
   pass.enabled = false;
@@ -133,6 +144,12 @@ export function createEdgePass(renderer, scene, camera) {
   };
 
   pass.render = (r, writeBuffer, readBuffer) => {
+    const camera = pass.camera;
+    const orto = !!(/** @type {any} */ (camera).isOrthographicCamera);
+    if (orto !== ('ORTHOGRAPHIC' in material.defines)) {
+      if (orto) material.defines.ORTHOGRAPHIC = ''; else delete material.defines.ORTHOGRAPHIC;
+      material.needsUpdate = true;
+    }
     material.uniforms.cameraNear.value = camera.near;
     material.uniforms.cameraFar.value = camera.far;
     // lo que no es geometría de trabajo se esconde solo para este render interno
