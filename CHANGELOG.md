@@ -18,7 +18,17 @@
 - Sección `camera` nueva en los presets: `{ duration, easing, damping }`. El `damping` de los
   OrbitControls (0.12) ahora sale de ahí; con 0, sin inercia. Un preset propio que no la tiene
   la toma de `studio`.
-- `frame()` pasa por lo mismo: corta una animación en curso y respeta el polo.
+- **Vistas con nombre y encuadre por caja** (#6). `VIEWS` (también `motor.VIEWS`): front, back,
+  right, left, top, bottom e iso, cada una `{ dir, up }`; arriba y abajo con su propio `up`.
+  `view.go(vista, { fit, margin, animate })` va a una vista y encuadra (`fit`: una caja
+  `{ min, max }` de arrays, unos objetos, por defecto todo el contenido; `false`: sin encuadrar).
+  Una vista propia (una esquina, un ViewCube) es un `{ dir, up }`. `view.fit(caja | objetos)`
+  encuadra sin cambiar de dirección.
+- **Arreglo:** el encuadre usaba solo el fov vertical y una esfera de la diagonal: en una ventana
+  más alta que ancha (un teléfono parado) cortaba los costados. Ahora usa el fov que limita y los
+  8 vértices de la caja, con un margen (`preset.camera.margin`, 1.15). `frame(objects)` es
+  `view.fit(objects)`: el encuadre queda más justo que antes. Sin objetos, encuadra las mallas
+  visibles sin el estudio ni lo marcado con `userData.noRender` (guías, cotas).
 
 ## 0.6.0
 

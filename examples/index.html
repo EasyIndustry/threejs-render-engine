@@ -35,7 +35,8 @@
     <button id="render">render</button>
     <button data-orbit="-45">↺ 45°</button>
     <button data-orbit="45">↻ 45°</button>
-    <button id="arriba">arriba</button>
+    <select id="vista"></select>
+    <button id="encuadrar">encuadrar</button>
     <button id="guardar">guardar vista</button>
     <button id="volver">volver a la vista</button>
   </div>
@@ -81,7 +82,10 @@
     };
     // la cámara con valores planos (motor.view): sin tocar three
     for (const b of document.querySelectorAll('[data-orbit]')) b.onclick = () => motor.view.orbit(+b.dataset.orbit, 0, { animate: true });
-    document.getElementById('arriba').onclick = () => motor.view.orbit(0, 180, { animate: true });
+    const vista = document.getElementById('vista');
+    vista.innerHTML = '<option value="">vista…</option>' + Object.keys(motor.VIEWS).map((v) => `<option>${v}</option>`).join('');
+    vista.onchange = () => { if (vista.value) motor.view.go(vista.value, { animate: true }); vista.value = ''; };
+    document.getElementById('encuadrar').onclick = () => motor.view.fit(motor.selected.length ? motor.selected : undefined, { animate: true });
     let guardada = JSON.stringify(motor.view.get());
     document.getElementById('guardar').onclick = () => { guardada = JSON.stringify(motor.view.get()); };
     document.getElementById('volver').onclick = () => motor.view.set(JSON.parse(guardada), { animate: true });

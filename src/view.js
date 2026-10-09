@@ -333,3 +333,108 @@ export function sameView(a, b, eps = 1e-9) {
   return cerca(a.position, b.position, r) && cerca(a.target, b.target, r) && cerca(a.up, b.up, 1)
     && Math.abs(a.fov - b.fov) <= eps * 180 && a.projection === b.projection && Math.abs(a.zoom - b.zoom) <= eps * a.zoom;
 }
+
+// ---------- vistas con nombre y encuadre ----------
+
+/** @typedef {{ dir: Vec3, up: Vec3 }} ViewDirection */
+/** @typedef {{ min: Vec3, max: Vec3 }} Box */
+
+/**
+ * Las vistas con nombre: `dir` es de qué lado del objetivo se pone la cámara (front: en +z,
+ * mirando hacia −z) y `up`, hacia dónde queda arriba la pantalla. Arriba y abajo tienen su propio
+ * `up`: son exactas, sin ángulos mágicos. Para vistas propias (un ViewCube, una esquina), go()
+ * acepta también un { dir, up }.
+ */
+export const VIEWS = /** @type {Readonly<Record<string, Readonly<ViewDirection>>>} */ (Object.freeze({
+  front: Object.freeze({ dir: [0, 0, 1], up: [0, 1, 0] }),
+  back: Object.freeze({ dir: [0, 0, -1], up: [0, 1, 0] }),
+  right: Object.freeze({ dir: [1, 0, 0], up: [0, 1, 0] }),
+  left: Object.freeze({ dir: [-1, 0, 0], up: [0, 1, 0] }),
+  top: Object.freeze({ dir: [0, 1, 0], up: [0, 0, -1] }),
+  bottom: Object.freeze({ dir: [0, -1, 0], up: [0, 0, 1] }),
+  iso: Object.freeze({ dir: [1, 0.8, 1], up: [0, 1, 0] }),
+}));
+
+/**
+ * Una vista: un nombre de VIEWS o un { dir, up } (up solo cuenta en los polos).
+ * @param {string | ViewDirection} v @returns {ViewDirection}
+ */
+export function viewDirection(v) {
+  if (typeof v === 'string') {
+    const found = VIEWS[v];
+    if (!found) throw new Error(`vista desconocida: ${v} (van ${Object.keys(VIEWS).join(', ')}, o un { dir, up })`);
+    return { dir: [...found.dir], up: [...found.up] };
+  }
+  if (!v || typeof v !== 'object') throw new TypeError("la vista va como un nombre ('front', 'top', …) o un { dir, up }");
+  const dir = vec3(v.dir, 'dir');
+  if (!(largo(dir) > 0)) throw new RangeError('dir no puede ser [0, 0, 0]');
+  return { dir, up: v.up === undefined ? [0, 1, 0] : vec3(v.up, 'up') };
+}
+
+/**
+ * Una caja { min, max } de arrays, validada. Una caja vacía (min > max en algún eje) da null.
+ * @param {unknown} b @returns {Box | null}
+ */
+export function box(b) {
+  if (!b || typeof b !== 'object') throw new TypeError('la caja va como { min: [x, y, z], max: [x, y, z] }');
+  const { min, max } = /** @type {{ min: unknown, max: unknown }} */ (b);
+  const lo = vec3(min, 'min'), hi = vec3(max, 'max');
+  return lo.every((x, i) => x <= hi[i]) ? { min: lo, max: hi } : null;
+}
+
+/**
+ * A qué distancia del centro de la caja, mirando desde `dir`, entra la caja entera en la
+ * pantalla: los 8 vértices, con el fov que limite (el vertical o el horizontal, según el aspecto)
+ * y con `margin` (1.15: la caja ocupa 1/1.15 de la pantalla en el eje que más la llena). `near`:
+ * lo más cerca que puede quedar el vértice más cercano.
+ * @param {Box} b @param {Vec3} dir @param {Vec3} up
+ * @param {{ fov: number, aspect: number, margin?: number, near?: number }} o
+ */
+export function fitDistance(b, dir, up, { fov, aspect, margin = 1.15, near = 0 }) {
+  if (!(margin > 0)) throw new RangeError(`margin va mayor que 0 (llegó ${margin})`);
+  if (!(aspect > 0)) throw new RangeError(`aspect va mayor que 0 (llegó ${aspect})`);
+  const c = mezcla(b.min, b.max, 0.5);
+  // la base de la cámara para esa vista: la misma que usa orbitar
+  const s = conUp(/** @type {ViewState} */ ({ position: suma(c, por(dir, 1 / largo(dir))), target: c, up, fov, projection: 'perspective', zoom: 1 }));
+  const { right, up: arriba, forward } = basis(s);
+  const tv = Math.tan((fov * RAD) / 2), th = tv * aspect;
+  let d = 0, delante = -Infinity;
+  for (let i = 0; i < 8; i++) {
+    const p = /** @type {Vec3} */ ([i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]]);
+    const q = resta(p, c);
+    // la cámara está en c − forward·d: la profundidad del vértice es d + q·forward
+    const z = punto(q, forward);
+    d = Math.max(d, (Math.abs(punto(q, right)) * margin) / th - z, (Math.abs(punto(q, arriba)) * margin) / tv - z);
+    delante = Math.max(delante, -z);
+  }
+  return Math.max(d, delante + near);
+}
+
+/**
+ * Encuadrar una caja: el centro de la caja al centro de la pantalla y la caja entera adentro.
+ * Sin `view`, desde la dirección en la que ya mira la cámara; con `view`, desde esa vista.
+ * @param {ViewState} s @param {Box} b
+ * @param {{ aspect: number, margin?: number, near?: number, view?: string | ViewDirection, limits?: ViewLimits }} o
+ * @returns {ViewState}
+ */
+export function fit(s, b, { aspect, margin, near, view, limits = NO_LIMITS }) {
+  const v = view === undefined ? null : viewDirection(view);
+  const a = angles(s);
+  const dir = v ? v.dir : resta(s.position, s.target);
+  // en un polo, la pantalla sigue mirando para el mismo lado (o para el de la vista)
+  const up = v ? v.up : desdeAngulos(s.target, 1, a.yaw, a.pitch).up;
+  const c = mezcla(b.min, b.max, 0.5);
+  const d = fitDistance(b, dir, up, { fov: s.fov, aspect, margin, near });
+  const out = conUp({ ...s, target: c, position: suma(c, por(dir, d / largo(dir))), up });
+  return constrain(out, limits);
+}
+
+/**
+ * Ir a una vista sin encuadrar: la misma distancia y el mismo objetivo, desde otro lado.
+ * @param {ViewState} s @param {string | ViewDirection} view @param {{ limits?: ViewLimits }} [o] @returns {ViewState}
+ */
+export function go(s, view, { limits = NO_LIMITS } = {}) {
+  const v = viewDirection(view);
+  const r = angles(s).distance;
+  return constrain(conUp({ ...s, position: suma(s.target, por(v.dir, r / largo(v.dir))), up: v.up }), limits);
+}

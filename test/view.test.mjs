@@ -164,3 +164,72 @@ test('mergeLimits valida', () => {
   assert.throws(() => mergeLimits(NO_LIMITS, { minDistance: 10, maxDistance: 5 }), /distancias/);
   assert.throws(() => mergeLimits(NO_LIMITS, { techo: 3 }), /límite desconocido/);
 });
+
+import { VIEWS, fit, go, fitDistance, viewDirection, box } from '../src/view.js';
+
+const CAJA = { min: [-30, 0, -20], max: [50, 60, 25] };
+const vertices = (b) => Array.from({ length: 8 }, (_, i) => [i & 1 ? b.max[0] : b.min[0], i & 2 ? b.max[1] : b.min[1], i & 4 ? b.max[2] : b.min[2]]);
+
+for (const aspect of [16 / 9, 9 / 16]) {
+  test(`go('front', { fit }) en ${aspect > 1 ? '16:9' : '9:16'}: mira por −z, centrada, y los 8 vértices adentro con el margen`, () => {
+    const s = fit(BASE, CAJA, { aspect, margin: 1.15, view: 'front' });
+    assert.deepEqual(basis(s).forward.map((x) => Math.round(x) + 0), [0, 0, -1]);
+    const c = [10, 30, 2.5];
+    const pc = proyectar(s, c, aspect);
+    assert.ok(Math.hypot(pc[0], pc[1]) < 1e-12);
+    let lleno = 0;
+    for (const v of vertices(CAJA)) {
+      const [x, y] = proyectar(s, v, aspect);
+      assert.ok(Math.abs(x) <= 1 / 1.15 + 1e-9 && Math.abs(y) <= 1 / 1.15 + 1e-9, `${v} → ${x}, ${y}`);
+      lleno = Math.max(lleno, Math.abs(x), Math.abs(y));
+    }
+    // justo: algún vértice toca el margen (no sobra lugar)
+    assert.ok(Math.abs(lleno - 1 / 1.15) < 1e-9);
+  });
+}
+
+test('encuadrar sin vista conserva la dirección; dos veces igual da exactamente lo mismo', () => {
+  const a = fit(BASE, CAJA, { aspect: 1.5 });
+  const b = fit(BASE, CAJA, { aspect: 1.5 });
+  assert.deepEqual(a, b);
+  const da = angles(a), d0 = angles(BASE);
+  assert.ok(Math.abs(da.yaw - d0.yaw) < 1e-12 && Math.abs(da.pitch - d0.pitch) < 1e-12);
+  for (const v of vertices(CAJA)) {
+    const [x, y] = proyectar(a, v, 1.5);
+    assert.ok(Math.abs(x) <= 1 / 1.15 + 1e-9 && Math.abs(y) <= 1 / 1.15 + 1e-9);
+  }
+});
+
+test("go('top') y go('bottom') son exactas, y orbitar desde ahí no salta", () => {
+  const t = go(BASE, 'top');
+  assert.equal(t.position[0], t.target[0]);
+  assert.equal(t.position[2], t.target[2]);
+  assert.ok(t.position[1] > t.target[1]);
+  assert.deepEqual(basis(t).up.map((x) => Math.round(x) + 0), [0, 0, -1]);
+  const b = go(BASE, 'bottom');
+  assert.ok(b.position[1] < b.target[1]);
+  assert.deepEqual(basis(b).up.map((x) => Math.round(x) + 0), [0, 0, 1]);
+  const casi = orbit(t, 0, -0.01);
+  assert.ok(dist(basis(casi).right, basis(t).right) < 1e-9);
+  // misma distancia y mismo objetivo
+  assert.ok(Math.abs(radio(t) - radio(BASE)) < 1e-9);
+  assert.deepEqual(t.target, BASE.target);
+});
+
+test('las vistas: la tabla, las propias y los errores', () => {
+  for (const [n, v] of Object.entries(VIEWS)) {
+    const s = go(BASE, n);
+    const o = [0, 1, 2].map((i) => s.position[i] - s.target[i]);
+    const k = Math.hypot(...v.dir);
+    assert.ok(dist(o.map((x) => x / radio(s)), v.dir.map((x) => x / k)) < 1e-9, n);
+  }
+  assert.ok(Object.isFrozen(VIEWS) && Object.isFrozen(VIEWS.front));
+  const esquina = go(BASE, { dir: [-1, 1, 1] });
+  assert.ok(esquina.position[0] < esquina.target[0]);
+  assert.throws(() => viewDirection('frente'), /vista desconocida/);
+  assert.throws(() => viewDirection({ dir: [0, 0, 0] }), /no puede ser/);
+  assert.equal(box({ min: [1, 0, 0], max: [0, 1, 1] }), null);
+  assert.throws(() => box({ min: [0, 0], max: [1, 1, 1] }), /\[x, y, z\]/);
+  // una caja chata (un plano) también entra
+  assert.ok(fitDistance({ min: [-10, 0, -10], max: [10, 0, 10] }, [0, 0, 1], [0, 1, 0], { fov: 38, aspect: 1 }) > 0);
+});

@@ -18,6 +18,7 @@ motor.mode = 'clay';                            // render | clay | wireframe | n
 motor.edges({ enabled: true });                 // contorno fino de geometría
 motor.view.orbit(45, 0, { animate: true });     // la cámara con valores planos, sin tocar three
 const vista = motor.view.get();                 // { position, target, up, fov, … }: va al documento como JSON
+motor.view.go('front', { fit: { min: [0, 0, 0], max: [60, 75, 40] } });   // vista con nombre, encuadrando una caja
 const png = await motor.render({ samples: 300, width: 1920, height: 1080 });
 motor.help();                                   // todo lo que hay
 ```
@@ -36,8 +37,11 @@ motor.help();                                   // todo lo que hay
   `get()` y `set(estado)` (serializable con JSON: la vista se guarda con el documento),
   `orbit`, `pan`, `zoom` (hacia el cursor con `at`), `dolly`, `lookAt`, todos con
   `{ animate }` y una Promise; `limits()` (distancia, cabeceo, piso) en todos los caminos; y
-  `onChange`, `onStart`, `onEnd`. Justo arriba la vista es exacta, sin ángulos mágicos. La
-  duración, el easing y la inercia están en el preset (`camera`).
+  `onChange`, `onStart`, `onEnd`. Vistas con nombre (`motor.VIEWS`: front, back, right, left,
+  top, bottom, iso, o un `{ dir, up }` propio) con `view.go()`, y encuadre con `view.fit()`:
+  una caja `{ min, max }` o unos objetos, con el aspecto de la pantalla (no se corta en un
+  teléfono parado). Justo arriba la vista es exacta, sin ángulos mágicos. La duración, el
+  easing, la inercia y el margen del encuadre están en el preset (`camera`).
 - **Render en un click.** `render()` hace path tracing de la escena como está, en un
   renderer aparte del tamaño pedido, y devuelve un PNG. El visor sigue andando mientras.
 - **Bordes suaves.** El post-proceso usa MSAA (`antialias: 4` por defecto); el render final

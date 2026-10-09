@@ -30,9 +30,10 @@ import { createAutoScale } from './resolution.js';
 import { ENGINE_MEMBERS } from './members.js';
 import { sinAO, sinContorno } from './flags.js';
 import * as V from './view.js';
+import { VIEWS } from './view.js';
 
 export { PRESETS, resolvePreset, mergePreset, definePreset, ENGINE_MEMBERS, QUALITY, CUSTOM_QUALITY, resolveQuality, suggestQuality };
-export { EASINGS } from './view.js';
+export { EASINGS, VIEWS } from './view.js';
 
 /** @typedef {import('./presets.js').Preset} Preset */
 /** @typedef {'render' | 'clay' | 'wireframe' | 'normals' | 'matcap'} Mode */
@@ -477,6 +478,18 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     return (2 * V.angles(s).distance * Math.tan((s.fov * Math.PI) / 360)) / medida()[1];
   };
 
+  /**
+   * Lo que se encuadra: una caja { min, max } de la app, unos objetos, o todo el contenido.
+   * @param {V.Box | THREE.Object3D[] | undefined} f @returns {V.Box | null}
+   */
+  function cajaPlana(f) {
+    if (f !== undefined && !Array.isArray(f)) return V.box(f);
+    const c = cajaDe(f);
+    return c.isEmpty() ? null : { min: c.min.toArray(), max: c.max.toArray() };
+  }
+  /** @param {number | undefined} m */
+  const margen = (m) => m ?? P.camera.margin;
+
   /** @typedef {{ animate?: boolean | { duration?: number, easing?: string } }} Animar */
   const view = {
     /** El estado de la cámara, con valores planos (se guarda como JSON). */
@@ -522,6 +535,29 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     /** Mirar a un punto sin mover la cámara. @param {V.Vec3} point @param {Animar} [o] */
     lookAt(point, { animate } = {}) { return mover(V.lookAt(base(), point, { limits: limites() }), animate); },
     /**
+     * Ir a una vista: un nombre de VIEWS ('front', 'top', 'iso', …) o un { dir, up } propio, y
+     * encuadrar: `fit` es una caja { min, max } o unos objetos (por defecto, todo el contenido;
+     * false: sin encuadrar, a la misma distancia). `margin`: 1.15 deja la caja en 1/1.15 de la pantalla.
+     * @param {string | V.ViewDirection} name @param {Animar & { fit?: V.Box | THREE.Object3D[] | false, margin?: number }} [o]
+     */
+    go(name, { fit, margin, animate } = {}) {
+      const s = base();
+      if (fit === false) return mover(V.go(s, name, { limits: limites() }), animate);
+      const b = cajaPlana(fit);
+      if (!b) return mover(V.go(s, name, { limits: limites() }), animate);
+      return mover(V.fit(s, b, { aspect: camera.aspect, margin: margen(margin), near: camera.near * 2, view: name, limits: limites() }), animate);
+    },
+    /**
+     * Encuadrar sin cambiar de dirección: una caja { min, max }, unos objetos, o todo el contenido.
+     * Usa el fov que limite (vertical u horizontal) y la caja entera, no una esfera.
+     * @param {V.Box | THREE.Object3D[]} [what] @param {Animar & { margin?: number }} [o]
+     */
+    fit(what, { margin, animate } = {}) {
+      const b = cajaPlana(what);
+      if (!b) return Promise.resolve(true);
+      return mover(V.fit(base(), b, { aspect: camera.aspect, margin: margen(margin), near: camera.near * 2, limits: limites() }), animate);
+    },
+    /**
      * Hasta dónde se mueve la cámara, en todos los caminos (mouse, comandos y animaciones):
      * { minDistance, maxDistance, minPitch, maxPitch (grados), floor }. floor: true no deja
      * pasar debajo del piso; un número, debajo de esa altura. Sin argumentos, cómo están.
@@ -559,8 +595,23 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
    */
   function cajaDe(objs) {
     const caja = new THREE.Box3();
-    const lista = objs?.length ? objs : scene.children.filter((o) => o !== estudio);
-    for (const o of lista) caja.expandByObject(o);
+    if (objs?.length) { for (const o of objs) caja.expandByObject(o); return caja; }
+    // todo lo de la app: las mallas visibles, sin el estudio ni lo marcado con noRender (guías, cotas)
+    scene.updateMatrixWorld();
+    const b = new THREE.Box3();
+    /** @param {THREE.Object3D} o */
+    const juntar = (o) => {
+      if (!o.visible || o === estudio || o.userData.noRender) return;
+      const m = /** @type {THREE.Mesh & { isInstancedMesh?: boolean, boundingBox?: THREE.Box3 | null, computeBoundingBox?: () => void }} */ (o);
+      if (m.isMesh) {
+        // la malla sola, sin sus hijos: un hijo marcado con noRender no cuenta
+        const fuente = m.isInstancedMesh ? m : m.geometry;
+        if (!fuente.boundingBox) fuente.computeBoundingBox?.();
+        if (fuente.boundingBox) caja.union(b.copy(fuente.boundingBox).applyMatrix4(m.matrixWorld));
+      }
+      for (const h of o.children) juntar(h);
+    };
+    for (const o of scene.children) juntar(o);
     return caja;
   }
 
@@ -589,7 +640,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const cambiarCalidad = (q) => ponerCalidad(mergeQuality(Q, q));
 
   const motor = {
-    renderer, scene, camera, controls, content, overlay, composer, view,
+    renderer, scene, camera, controls, content, overlay, composer, view, VIEWS,
 
     /** El preset que está puesto (una copia: para cambiarlo, setPreset). */
     get preset() { return structuredClone(P); },
@@ -713,16 +764,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
      * Encuadra la cámara en unos objetos, o en todo lo que hay.
      * @param {THREE.Object3D[]} [objects]
      */
-    frame(objects) {
-      const caja = cajaDe(objects);
-      if (caja.isEmpty()) return motor;
-      const centro = caja.getCenter(new THREE.Vector3());
-      const radio = Math.max(area * 0.08, caja.getSize(new THREE.Vector3()).length() / 2);
-      const dir = camera.position.clone().sub(objetivo).normalize();
-      const pos = centro.clone().addScaledVector(dir, (radio / Math.sin((camera.fov * Math.PI) / 360)) * 1.1);
-      mover(V.merge(leer(), { position: pos.toArray(), target: centro.toArray() }), false);
-      return motor;
-    },
+    frame(objects) { view.fit(objects); return motor; },
 
     /**
      * Una foto rápida del visor (rasterizada, con lo que se ve ahora), como data URL.

@@ -4,7 +4,8 @@
 // de otro), no código.
 //
 // `camera` es cómo se siente el visor: cuánto dura una animación de la cámara (ms), con qué
-// easing, y la inercia al soltar el mouse (damping, 0 sin inercia).
+// easing, la inercia al soltar el mouse (damping, 0 sin inercia) y cuánto aire deja el encuadre
+// alrededor de lo encuadrado (margin: 1.15, lo encuadrado ocupa 1/1.15 de la pantalla).
 //
 // El radio del AO (y las distancias) van en función de `area` (el radio de la zona de trabajo, en la unidad de la
 // escena), así el mismo preset sirve en cm, en mm o en m: el motor escala sombras, grilla y
@@ -28,7 +29,7 @@
  *   bloom: { strength: number, radius: number, threshold: number },
  *   ao: { radius: number, intensity: number },
  *   render: { bounces: number, sky: string, ground: string, environmentIntensity: number },
- *   camera: { duration: number, easing: string, damping: number },
+ *   camera: { duration: number, easing: string, damping: number, margin: number },
  * }} Preset
  */
 
@@ -48,7 +49,7 @@ const STUDIO = {
   bloom: { strength: 0.8, radius: 0.4, threshold: 1 },
   ao: { radius: 0.03, intensity: 1 },
   render: { bounces: 5, sky: '#ffffff', ground: '#9a9aa2', environmentIntensity: 1 },
-  camera: { duration: 450, easing: 'ease-in-out', damping: 0.12 },
+  camera: { duration: 450, easing: 'ease-in-out', damping: 0.12, margin: 1.15 },
 };
 
 /** @type {Preset} */
@@ -67,7 +68,7 @@ const WARM = {
   bloom: { strength: 0.8, radius: 0.4, threshold: 1 },
   ao: { radius: 0.03, intensity: 1 },
   render: { bounces: 5, sky: '#fff6ea', ground: '#b8987a', environmentIntensity: 1 },
-  camera: { duration: 450, easing: 'ease-in-out', damping: 0.12 },
+  camera: { duration: 450, easing: 'ease-in-out', damping: 0.12, margin: 1.15 },
 };
 
 /** @type {Preset} */
@@ -86,7 +87,7 @@ const DARK = {
   bloom: { strength: 0.8, radius: 0.4, threshold: 1 },
   ao: { radius: 0.03, intensity: 1 },
   render: { bounces: 5, sky: '#3a3f4a', ground: '#0c0c0f', environmentIntensity: 1 },
-  camera: { duration: 450, easing: 'ease-in-out', damping: 0.12 },
+  camera: { duration: 450, easing: 'ease-in-out', damping: 0.12, margin: 1.15 },
 };
 
 /** Los presets que trae el motor. Una app agrega los suyos con `definePreset`. */
