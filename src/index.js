@@ -29,8 +29,10 @@ import { QUALITY, CUSTOM_QUALITY, resolveQuality, mergeQuality, qualityName, sug
 import { createAutoScale } from './resolution.js';
 import { ENGINE_MEMBERS } from './members.js';
 import { sinAO, sinContorno } from './flags.js';
+import * as V from './view.js';
 
 export { PRESETS, resolvePreset, mergePreset, definePreset, ENGINE_MEMBERS, QUALITY, CUSTOM_QUALITY, resolveQuality, suggestQuality };
+export { EASINGS } from './view.js';
 
 /** @typedef {import('./presets.js').Preset} Preset */
 /** @typedef {'render' | 'clay' | 'wireframe' | 'normals' | 'matcap'} Mode */
@@ -87,7 +89,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const camera = new THREE.PerspectiveCamera(fov, w0 / h0, area / 250, area * 16);
   camera.position.set(area * 0.6, area * 0.48, area * 0.76);
   const controls = conControles ? new OrbitControls(camera, renderer.domElement) : null;
-  if (controls) { controls.target.set(0, area * 0.1, 0); controls.enableDamping = true; controls.dampingFactor = 0.12; }
+  if (controls) controls.target.set(0, area * 0.1, 0);
 
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -203,6 +205,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   }
 
   function aplicarPreset() {
+    if (controls) { controls.enableDamping = P.camera.damping > 0; controls.dampingFactor = P.camera.damping; }
     scene.environmentIntensity = P.environment.intensity;
     renderer.toneMappingExposure = P.exposure;
 
@@ -337,7 +340,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   renderer.setAnimationLoop(() => {
     const dt = reloj.getDelta();
     if (auto) { const n = auto.sample(dt * 1000); if (n !== null) aplicarEscala(n); }
-    controls?.update();
+    pasoVista(dt);
     for (const fn of alCuadro) fn(dt);
     conModo(() => composer.render());
     if (overlay.children.length) {
@@ -346,7 +349,207 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       renderer.render(overlay, camera);
       renderer.autoClear = true;
     }
+    avisarVista();
   });
+
+  // ---------- la cámara como valores planos (view.js) ----------
+  /** El objetivo: el de los OrbitControls, o uno propio si se creó sin ellos. */
+  const objetivo = controls ? controls.target : new THREE.Vector3(0, area * 0.1, 0);
+  /** Los límites como los pidió la app (floor: true es el piso del estudio, en 0). */
+  let limitesPedidos = /** @type {Omit<V.ViewLimits, 'floor'> & { floor: number | boolean | null }} */ ({ ...V.NO_LIMITS });
+  /** Los límites para la matemática: el piso, en altura de la cámara (más el near, para no cortarlo). */
+  function limites() {
+    const f = limitesPedidos.floor;
+    return /** @type {V.ViewLimits} */ ({ ...limitesPedidos, floor: f === null || f === false ? null : (f === true ? 0 : f) + camera.near });
+  }
+  const _dir = new THREE.Vector3();
+  /** El estado de la cámara ahora. Sin OrbitControls, el objetivo sale de hacia dónde mira. @returns {V.ViewState} */
+  function leer() {
+    const p = camera.position;
+    let t = objetivo;
+    if (!controls) t = _dir.set(0, 0, -1).applyQuaternion(camera.quaternion).multiplyScalar(p.distanceTo(objetivo) || area).add(p);
+    return { position: [p.x, p.y, p.z], target: [t.x, t.y, t.z], up: [camera.up.x, camera.up.y, camera.up.z], fov: camera.fov, projection: 'perspective', zoom: camera.zoom };
+  }
+  /**
+   * Justo arriba o abajo. Ahí los OrbitControls no se actualizan solos: la sacarían del polo y la
+   * pantalla giraría. Se actualizan cuando el usuario la agarra (ver 'start').
+   */
+  let enPolo = false;
+  /** @param {V.ViewState} s */
+  function escribir(s) {
+    if (controls) {
+      // lo que le quedaba de inercia a los OrbitControls se descarta: si no, la movería después
+      const d = controls.enableDamping;
+      controls.enableDamping = false; controls.update(); controls.enableDamping = d;
+    }
+    camera.position.set(...s.position);
+    objetivo.set(...s.target);
+    camera.up.set(...s.up);
+    if (camera.fov !== s.fov) { camera.fov = s.fov; camera.updateProjectionMatrix(); }
+    camera.lookAt(objetivo);
+    enPolo = !(s.up[0] === 0 && s.up[1] === 1 && s.up[2] === 0);
+  }
+
+  // empieza y termina: una animación o el usuario moviéndola (con la inercia hasta que para)
+  /** @type {Set<() => void>} */ const avisosInicio = new Set();
+  /** @type {Set<() => void>} */ const avisosFin = new Set();
+  /** @type {Set<(s: V.ViewState) => void>} */ const avisosVista = new Set();
+  /** @type {Set<string>} */ const moviendo = new Set();
+  /** @param {string} k */
+  const empieza = (k) => { if (!moviendo.size) for (const fn of avisosInicio) fn(); moviendo.add(k); };
+  /** @param {string} k */
+  const termina = (k) => { if (moviendo.delete(k) && !moviendo.size) for (const fn of avisosFin) fn(); };
+  /** @type {V.ViewState | null} */ let ultimaVista = null;
+  function avisarVista() {
+    if (!avisosVista.size) return;
+    const s = leer();
+    if (ultimaVista && V.sameView(s, ultimaVista, 1e-12)) return;
+    ultimaVista = s;
+    for (const fn of avisosVista) fn(V.clone(s));
+  }
+
+  /** @type {{ desde: V.ViewState, hasta: V.ViewState, t: number, ms: number, ease: (t: number) => number, fin: (ok: boolean) => void } | null} */
+  let anim = null;
+  /** @param {boolean} ok */
+  function terminarAnim(ok) {
+    if (!anim) return;
+    const a = anim; anim = null;
+    termina('anim');
+    a.fin(ok);
+  }
+  let usuario = false, soltado = false;
+  /** @param {number} dt */
+  function pasoVista(dt) {
+    if (anim) {
+      // un cuadro largo (la pestaña estuvo quieta) no hace saltar la animación
+      anim.t = Math.min(1, anim.t + (Math.min(dt, 0.1) * 1000) / anim.ms);
+      escribir(V.interpolate(anim.desde, anim.hasta, anim.ease(anim.t)));
+      if (anim.t >= 1) terminarAnim(true);
+      return;
+    }
+    if (!controls || (enPolo && !usuario)) return;
+    const movio = controls.update();
+    if (usuario && soltado && !movio) { usuario = false; termina('user'); }
+  }
+  if (controls) {
+    controls.addEventListener('start', () => {
+      empieza('user');
+      usuario = true; soltado = false;
+      terminarAnim(false);
+      if (enPolo) {
+        // los OrbitControls no saben girar en el polo: se la deja un pelo afuera, con la pantalla
+        // mirando para el mismo lado
+        const s = leer();
+        escribir(V.orbit(s, 0, V.angles(s).pitch > 0 ? -1e-4 : 1e-4));
+      }
+    });
+    controls.addEventListener('end', () => { soltado = true; });
+    controls.addEventListener('change', () => {
+      const f = limites().floor;
+      if (f !== null && camera.position.y < f) { camera.position.y = f; camera.lookAt(objetivo); }
+    });
+  }
+
+  /** Lo que sigue a los relativos: si hay una animación, se suman a donde iba. */
+  const base = () => (anim ? V.clone(anim.hasta) : leer());
+  /**
+   * Lleva la cámara a `s`, de una o animada. La Promise dice si llegó (true) o si otro comando o
+   * el usuario la cortó en el camino (false).
+   * @param {V.ViewState} s @param {boolean | { duration?: number, easing?: string } | undefined} animate
+   * @returns {Promise<boolean>}
+   */
+  function mover(s, animate) {
+    const cfg = animate === true ? {} : animate || null;
+    const ms = cfg ? cfg.duration ?? P.camera.duration : 0;
+    if (typeof ms !== 'number' || !(ms >= 0)) throw new RangeError(`duration va en ms, 0 o más (llegó ${ms})`);
+    const ease = V.easing(cfg?.easing ?? P.camera.easing);
+    if (!(ms > 0)) { terminarAnim(false); escribir(s); return Promise.resolve(true); }
+    const desde = leer();
+    return new Promise((fin) => {
+      const previa = anim;
+      anim = { desde, hasta: s, t: 0, ms, ease, fin };
+      if (previa) previa.fin(false); else empieza('anim');
+    });
+  }
+  /** Píxeles del visor a unidades de la escena, en el plano del objetivo. */
+  const unidadesPorPixel = () => {
+    const s = base();
+    return (2 * V.angles(s).distance * Math.tan((s.fov * Math.PI) / 360)) / medida()[1];
+  };
+
+  /** @typedef {{ animate?: boolean | { duration?: number, easing?: string } }} Animar */
+  const view = {
+    /** El estado de la cámara, con valores planos (se guarda como JSON). */
+    get() { return leer(); },
+    /**
+     * Lleva la cámara a un estado: lo que no se pasa queda como está. Exacto: después, get()
+     * devuelve lo mismo (salvo que los límites lo corrijan).
+     * @param {Partial<V.ViewState>} s @param {Animar} [o]
+     */
+    set(s, { animate } = {}) { return mover(V.constrain(V.merge(base(), s), limites()), animate); },
+    /**
+     * Orbitar, en grados: yaw positivo lleva la cámara a su derecha, pitch positivo hacia arriba.
+     * `around`: el punto alrededor del que gira (por defecto el objetivo).
+     * @param {number} dYaw @param {number} dPitch @param {Animar & { around?: V.Vec3 }} [o]
+     */
+    orbit(dYaw, dPitch, { around, animate } = {}) {
+      return mover(V.orbit(base(), dYaw, dPitch, { around: around && V.vec3(around, 'around'), limits: limites() }), animate);
+    },
+    /**
+     * Desplazar cámara y objetivo en el plano de la pantalla: dx positivo a la derecha, dy hacia
+     * arriba. En píxeles del visor (unit: 'px', por defecto) o en unidades de la escena ('world').
+     * @param {number} dx @param {number} dy @param {Animar & { unit?: 'px' | 'world' }} [o]
+     */
+    pan(dx, dy, { unit = 'px', animate } = {}) {
+      if (unit !== 'px' && unit !== 'world') throw new Error(`unit va 'px' o 'world' (llegó ${unit})`);
+      const k = unit === 'px' ? unidadesPorPixel() : 1;
+      return mover(V.pan(base(), dx * k, dy * k, { limits: limites() }), animate);
+    },
+    /**
+     * Acercar: 2 deja todo el doble de grande, 0.5 la mitad. `at`: un punto del visor en píxeles
+     * ([x, y] desde arriba a la izquierda) que queda quieto, para acercar hacia el cursor.
+     * @param {number} factor @param {Animar & { at?: [number, number] }} [o]
+     */
+    zoom(factor, { at, animate } = {}) {
+      const [w, h] = medida();
+      if (at !== undefined && !(Array.isArray(at) && at.length === 2 && at.every(Number.isFinite))) throw new TypeError(`at va como [x, y] en píxeles del visor (llegó ${JSON.stringify(at)})`);
+      /** @type {[number, number] | undefined} */
+      const ndc = at ? [(at[0] / w) * 2 - 1, 1 - (at[1] / h) * 2] : undefined;
+      return mover(V.zoom(base(), factor, { at: ndc, aspect: w / h, limits: limites() }), animate);
+    },
+    /** Avanzar hacia el objetivo (negativo: retroceder), en unidades de la escena, sin pasarlo. @param {number} distance @param {Animar} [o] */
+    dolly(distance, { animate } = {}) { return mover(V.dolly(base(), distance, { limits: limites() }), animate); },
+    /** Mirar a un punto sin mover la cámara. @param {V.Vec3} point @param {Animar} [o] */
+    lookAt(point, { animate } = {}) { return mover(V.lookAt(base(), point, { limits: limites() }), animate); },
+    /**
+     * Hasta dónde se mueve la cámara, en todos los caminos (mouse, comandos y animaciones):
+     * { minDistance, maxDistance, minPitch, maxPitch (grados), floor }. floor: true no deja
+     * pasar debajo del piso; un número, debajo de esa altura. Sin argumentos, cómo están.
+     * @param {Partial<Omit<V.ViewLimits, 'floor'> & { floor: number | boolean | null }>} [l]
+     */
+    limits(l) {
+      if (l) {
+        const { floor, ...resto } = l;
+        if (floor !== undefined && floor !== null && typeof floor !== 'boolean' && !Number.isFinite(floor)) throw new TypeError('floor va true, false, una altura o null');
+        const { floor: _f, ...validados } = V.mergeLimits({ ...limitesPedidos, floor: null }, resto);
+        limitesPedidos = { ...validados, floor: floor === undefined ? limitesPedidos.floor : floor };
+        if (controls) {
+          controls.minDistance = limitesPedidos.minDistance; controls.maxDistance = limitesPedidos.maxDistance;
+          controls.minPolarAngle = ((90 - limitesPedidos.maxPitch) * Math.PI) / 180;
+          controls.maxPolarAngle = ((90 - limitesPedidos.minPitch) * Math.PI) / 180;
+        }
+        const s = base(), c = V.constrain(s, limites());
+        if (c !== s) mover(c, false);
+      }
+      return { ...limitesPedidos };
+    },
+    /** Algo que corre cuando cambia la cámara (una vez por cuadro, con el estado). Devuelve cómo sacarlo. @param {(s: V.ViewState) => void} fn */
+    onChange(fn) { if (!avisosVista.size) ultimaVista = leer(); avisosVista.add(fn); return () => avisosVista.delete(fn); },
+    /** Algo que corre cuando la cámara empieza a moverse (el usuario o una animación). Devuelve cómo sacarlo. @param {() => void} fn */
+    onStart(fn) { avisosInicio.add(fn); return () => avisosInicio.delete(fn); },
+    /** Algo que corre cuando la cámara se queda quieta (con la inercia ya terminada). Devuelve cómo sacarlo. @param {() => void} fn */
+    onEnd(fn) { avisosFin.add(fn); return () => avisosFin.delete(fn); },
+  };
 
   aplicarPreset();
 
@@ -386,7 +589,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   const cambiarCalidad = (q) => ponerCalidad(mergeQuality(Q, q));
 
   const motor = {
-    renderer, scene, camera, controls, content, overlay, composer,
+    renderer, scene, camera, controls, content, overlay, composer, view,
 
     /** El preset que está puesto (una copia: para cambiarlo, setPreset). */
     get preset() { return structuredClone(P); },
@@ -515,11 +718,9 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       if (caja.isEmpty()) return motor;
       const centro = caja.getCenter(new THREE.Vector3());
       const radio = Math.max(area * 0.08, caja.getSize(new THREE.Vector3()).length() / 2);
-      const objetivo = controls?.target ?? new THREE.Vector3();
       const dir = camera.position.clone().sub(objetivo).normalize();
-      objetivo.copy(centro);
-      camera.position.copy(centro).addScaledVector(dir, (radio / Math.sin((camera.fov * Math.PI) / 360)) * 1.1);
-      camera.lookAt(centro);
+      const pos = centro.clone().addScaledVector(dir, (radio / Math.sin((camera.fov * Math.PI) / 360)) * 1.1);
+      mover(V.merge(leer(), { position: pos.toArray(), target: centro.toArray() }), false);
       return motor;
     },
 
@@ -619,6 +820,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     /** Lo suelta todo: el loop, el post-proceso, el renderer. */
     dispose() {
       renderer.setAnimationLoop(null);
+      terminarAnim(false);
       ro.disconnect();
       controls?.dispose();
       composer.passes.forEach((p) => p.dispose?.());

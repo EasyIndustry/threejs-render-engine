@@ -33,6 +33,11 @@
     <button data-show="shadows">sombras</button>
     <button id="bordes">contorno fino</button>
     <button id="render">render</button>
+    <button data-orbit="-45">↺ 45°</button>
+    <button data-orbit="45">↻ 45°</button>
+    <button id="arriba">arriba</button>
+    <button id="guardar">guardar vista</button>
+    <button id="volver">volver a la vista</button>
   </div>
   <img id="salida" alt="render" />
   <script type="module">
@@ -74,6 +79,12 @@
       img.src = URL.createObjectURL(png);
       img.style.display = 'block';
     };
+    // la cámara con valores planos (motor.view): sin tocar three
+    for (const b of document.querySelectorAll('[data-orbit]')) b.onclick = () => motor.view.orbit(+b.dataset.orbit, 0, { animate: true });
+    document.getElementById('arriba').onclick = () => motor.view.orbit(0, 180, { animate: true });
+    let guardada = JSON.stringify(motor.view.get());
+    document.getElementById('guardar').onclick = () => { guardada = JSON.stringify(motor.view.get()); };
+    document.getElementById('volver').onclick = () => motor.view.set(JSON.parse(guardada), { animate: true });
     Object.assign(window, { motor, THREE, piezas });
   </script>
 </body>

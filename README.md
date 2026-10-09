@@ -16,6 +16,8 @@ motor.select([miMalla], { detail: true });     // contorno de selección
 motor.show({ grid: false, sky: true });        // prender y apagar partes del estudio
 motor.mode = 'clay';                            // render | clay | wireframe | normals | matcap
 motor.edges({ enabled: true });                 // contorno fino de geometría
+motor.view.orbit(45, 0, { animate: true });     // la cámara con valores planos, sin tocar three
+const vista = motor.view.get();                 // { position, target, up, fov, … }: va al documento como JSON
 const png = await motor.render({ samples: 300, width: 1920, height: 1080 });
 motor.help();                                   // todo lo que hay
 ```
@@ -30,6 +32,12 @@ motor.help();                                   // todo lo que hay
   selection: { color: '#0a7' } })`.
 - **A cualquier escala.** `area` es el radio de la zona de trabajo en la unidad de la escena
   (250 en cm es un taller): sombras, grilla, niebla y cámara se escalan con ella.
+- **La cámara, con valores planos.** `motor.view` la mueve sin que la app importe three:
+  `get()` y `set(estado)` (serializable con JSON: la vista se guarda con el documento),
+  `orbit`, `pan`, `zoom` (hacia el cursor con `at`), `dolly`, `lookAt`, todos con
+  `{ animate }` y una Promise; `limits()` (distancia, cabeceo, piso) en todos los caminos; y
+  `onChange`, `onStart`, `onEnd`. Justo arriba la vista es exacta, sin ángulos mágicos. La
+  duración, el easing y la inercia están en el preset (`camera`).
 - **Render en un click.** `render()` hace path tracing de la escena como está, en un
   renderer aparte del tamaño pedido, y devuelve un PNG. El visor sigue andando mientras.
 - **Bordes suaves.** El post-proceso usa MSAA (`antialias: 4` por defecto); el render final
@@ -43,6 +51,7 @@ motor.help();                                   // todo lo que hay
 ```
 src/
   index.js        createEngine: el estudio, el post-proceso, los modos y la API
+  view.js         la cámara como valores planos: estado, orbitar, desplazar, acercar, límites (puro)
   presets.js      los presets (puro: sin three)
   edges.js        el contorno fino de geometría (profundidad + normales, 1px)
   pathtracer.js   el render final (three-gpu-pathtracer)

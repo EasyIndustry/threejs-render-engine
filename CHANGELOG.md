@@ -1,5 +1,25 @@
 # Cambios
 
+## 0.7.0
+
+- **La cámara, con valores planos** (`motor.view`, #5): la app la mueve sin importar three.
+  `view.get()` devuelve `{ position, target, up, fov, projection, zoom }`, que viaja por JSON;
+  `view.set(estado)` es exacto (lo que no se pasa queda como está). Comandos relativos:
+  `orbit(dYaw, dPitch, { around })`, `pan(dx, dy, { unit: 'px' | 'world' })`,
+  `zoom(factor, { at })` (el punto bajo `at` queda quieto: zoom al cursor), `dolly(distancia)` y
+  `lookAt(punto)`. Todos aceptan `{ animate: true | { duration, easing } }` y devuelven una
+  Promise (true si llegó, false si otro comando o el usuario la cortó); un comando nuevo corta
+  la animación en curso sin salto, y los relativos se suman a donde iba.
+  `view.limits({ minDistance, maxDistance, minPitch, maxPitch, floor })` vale para el mouse, los
+  comandos y las animaciones. `view.onChange`, `onStart` y `onEnd` (este, con la inercia ya
+  terminada). La matemática es pura (`src/view.js`) y está probada en Node.
+- Justo arriba o justo abajo la vista es exacta: `up` dice hacia dónde queda la pantalla, sin un
+  `0.0001` escondido, y orbitar desde ahí (con un comando o con el mouse) no la hace girar.
+- Sección `camera` nueva en los presets: `{ duration, easing, damping }`. El `damping` de los
+  OrbitControls (0.12) ahora sale de ahí; con 0, sin inercia. Un preset propio que no la tiene
+  la toma de `studio`.
+- `frame()` pasa por lo mismo: corta una animación en curso y respeta el polo.
+
 ## 0.6.0
 
 - `render()` ya no falla si la escena tiene un espejo (`Reflector` de three) o una malla con material
