@@ -64,11 +64,12 @@ src/
   view.js         la cámara como valores planos: estado, orbitar, desplazar, acercar, límites (puro)
   gestures.js     qué hace cada gesto y cada tecla: esquemas three, cad, blender (puro)
   presets.js      los presets (puro: sin three)
+  hdri.js         las opciones del entorno HDRI y el formato del archivo (puro)
   edges.js        el contorno fino de geometría (profundidad + normales, 1px)
   pathtracer.js   el render final (three-gpu-pathtracer)
   help.js         help(): la ayuda de la API
   members.js      la tabla de help() (pura: una prueba la compara con la API)
-examples/         una página para probarlo
+examples/         una página para probarlo, y examples/hdri/ con panoramas de prueba (CC0)
 test/             las pruebas, en Node
 ```
 
@@ -105,12 +106,19 @@ three < 0.180). Las 0.0.25 en adelante piden three ≥ 0.185 y three-mesh-bvh �
 | `motor.overlay` | una escena encima de todo y fuera del post-proceso: gizmos, manijas |
 | `motor.onFrame(fn)` | algo que corre en cada cuadro (etiquetas CSS2D, animaciones) |
 | `motor.onResize(fn)` | avisa cuando cambian los píxeles del visor (ventana o resolución): ahí se ajusta lo que la app dimensiona según el visor, como el reflejo de un espejo |
+| `motor.hdri(fuente, opciones)` | un panorama HDRI (`.hdr`, `.exr`, imagen o `THREE.Texture`) que ilumina, se refleja y se ve de fondo, en el visor y en el render final; ver abajo |
 
 En el render final no salen líneas, puntos, sprites, espejos (`Reflector`) ni mallas con material de
 shader propio (el path tracer no los entiende: un espejo, ahí, es un material estándar con
 `metalness: 1, roughness: 0`). Los espejos tampoco entran en las aristas, la oclusión ambiental ni los contornos de selección:
 así cada uno cuesta un render extra por cuadro y no uno por pasada. La luz hemisférica no existe para el
 path tracer: ese relleno lo da un entorno degradé (`preset.render.sky` / `ground`).
+
+**Un lugar de fondo (HDRI).** `await motor.hdri('galpon.hdr', { rotation: 90, blur: 0.1 })` pone un
+panorama equirectangular que ilumina y se refleja en los materiales (y entra al render final); con
+`{ background: false }` solo ilumina. `motor.hdri({ rotation: 180 })` cambia las opciones del que está,
+`motor.hdri(null)` vuelve al estudio. El piso y la grilla del estudio tapan el panorama:
+`motor.show({ floor: false, grid: false })` los saca. En `examples/hdri/` hay cuatro de prueba.
 
 ## Pruebas
 

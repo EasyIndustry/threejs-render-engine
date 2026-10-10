@@ -39,6 +39,10 @@
     <button id="encuadrar">encuadrar</button>
     <button id="proyeccion">ortográfica</button>
     <select id="esquema"></select>
+    <select id="entorno"></select>
+    <button id="fondo">fondo HDRI</button>
+    <label title="rotación del HDRI">giro <input id="giro" type="range" min="0" max="360" value="0" style="width: 90px; vertical-align: middle" /></label>
+    <label title="desenfoque del fondo">desenfoque <input id="desenfoque" type="range" min="0" max="1" step="0.05" value="0" style="width: 70px; vertical-align: middle" /></label>
     <button id="guardar">guardar vista</button>
     <button id="volver">volver a la vista</button>
   </div>
@@ -96,6 +100,23 @@
     const esquema = document.getElementById('esquema');
     esquema.innerHTML = Object.keys(motor.SCHEMES).map((s) => `<option>${s}</option>`).join('');
     esquema.onchange = () => motor.view.input({ scheme: esquema.value, zoomToCursor: esquema.value !== 'three' });
+    // el entorno HDRI (motor.hdri): ilumina, se refleja y se ve de fondo; los de examples/hdri/ son CC0 de Poly Haven
+    const HDRIS = { 'galpón': 'empty_warehouse_01', 'taller de carpintería': 'carpentry_shop_02', 'pasaje con plantas': 'glass_passage', 'jardín': 'studio_garden' };
+    const entorno = document.getElementById('entorno'), giro = document.getElementById('giro'), desenfoque = document.getElementById('desenfoque');
+    entorno.innerHTML = '<option value="">entorno de estudio</option>' + Object.entries(HDRIS).map(([n, f]) => `<option value="${f}">${n}</option>`).join('');
+    const opcionesHdri = () => ({ rotation: +giro.value, blur: +desenfoque.value });
+    entorno.onchange = async () => {
+      entorno.disabled = true;
+      try {
+        await motor.hdri(entorno.value ? `./hdri/${entorno.value}.hdr` : null, opcionesHdri());
+        // el piso y la grilla del estudio tapan el panorama: con un lugar de fondo, la app los saca
+        motor.show({ floor: !entorno.value, grid: !entorno.value });
+      }
+      catch (e) { console.error(e); entorno.value = ''; }
+      finally { entorno.disabled = false; }
+    };
+    giro.oninput = desenfoque.oninput = () => { if (motor.hdri().active) motor.hdri(opcionesHdri()); };
+    document.getElementById('fondo').onclick = () => { if (motor.hdri().active) motor.hdri({ background: !motor.hdri().background }); };
     let guardada = JSON.stringify(motor.view.get());
     document.getElementById('guardar').onclick = () => { guardada = JSON.stringify(motor.view.get()); };
     document.getElementById('volver').onclick = () => motor.view.set(JSON.parse(guardada), { animate: true });

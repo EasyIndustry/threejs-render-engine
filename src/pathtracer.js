@@ -6,8 +6,8 @@
 // una app que nunca renderiza no lo necesita en su importmap.
 //
 // Lo que el path tracer no entiende se resuelve acá:
-//   - el entorno del visor (PMREM) no es equirectangular: durante el render va un degradé
-//     cielo/suelo del preset;
+//   - el entorno del visor (PMREM) no es equirectangular: durante el render va el HDRI
+//     (motor.hdri) si hay, y si no un degradé cielo/suelo del preset;
 //   - la luz hemisférica no existe para él: ese relleno lo da el entorno;
 //   - líneas, grillas, sprites, espejos (Reflector), lo de material de shader propio y lo marcado
 //     con `userData.noRender` no salen en la imagen (ver flags.js).
@@ -71,7 +71,7 @@ function porGrupo(o) {
 }
 
 /**
- * @param {{ scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, preset: () => Preset, samples?: number }} ctx
+ * @param {{ scene: THREE.Scene, camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRenderer, preset: () => Preset, samples?: number, hdri?: () => { texture: THREE.Texture, intensity: number } | null }} ctx
  * @param {RenderOptions} [opts]
  * @returns {Promise<Blob>}
  */
@@ -140,8 +140,10 @@ export async function pathTrace(ctx, opts = {}) {
     reemplazos.add(...partes);
   }
   if (reemplazos.children.length) scene.add(reemplazos);
-  scene.environment = cielo;
-  scene.environmentIntensity = p.render.environmentIntensity;
+  // con HDRI, el panorama entero (la rotación y el fondo ya están en la escena); sin él, el degradé
+  const hdri = ctx.hdri?.();
+  scene.environment = hdri ? hdri.texture : cielo;
+  scene.environmentIntensity = hdri ? hdri.intensity : p.render.environmentIntensity;
   scene.fog = null;
   try {
     // síncrono: setSceneAsync pide un worker de BVH aparte, y para un render a pedido no vale la pena

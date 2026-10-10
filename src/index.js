@@ -28,6 +28,7 @@ import { QUALITY, CUSTOM_QUALITY, resolveQuality, mergeQuality, qualityName, sug
 import { createAutoScale } from './resolution.js';
 import { ENGINE_MEMBERS } from './members.js';
 import { sinAO, sinContorno } from './flags.js';
+import { HDRI_DEFAULTS, hdriKind, mergeHdri } from './hdri.js';
 import * as V from './view.js';
 import * as G from './gestures.js';
 import { SCHEMES, KEYS } from './gestures.js';
@@ -103,7 +104,18 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   let distanciaOrto = 1;
 
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const entornoBase = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environment = entornoBase;
+
+  // el entorno HDRI (motor.hdri): la textura equirectangular, su versión PMREM para iluminar y cómo se ve
+  /** @type {THREE.Texture | null} */ let hdriTex = null;
+  /** @type {THREE.WebGLRenderTarget | null} */ let hdriPmrem = null;
+  /** ¿La textura la cargó el motor (y la suelta él) o es de la app? */
+  let hdriPropia = false;
+  /** @type {string | null} */ let hdriFuente = null;
+  let hdriOpts = { ...HDRI_DEFAULTS };
+  /** Cada pedido nuevo invalida a los que todavía están cargando. */
+  let hdriPedido = 0;
 
   /** Lo de la app, si no quiere colgarlo directo de la escena. */
   const content = new THREE.Group();
@@ -209,16 +221,29 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   function aplicarVisibilidad() {
     const bg = new THREE.Color(P.background);
     cieloTex?.dispose();
-    cieloTex = vis.sky && P.sky ? cielo(P.sky) : null;
-    scene.background = cieloTex ?? bg;
-    scene.fog = vis.fog && P.fog ? new THREE.Fog(P.sky && vis.sky ? P.sky.bottom : bg, P.fog.near * area, P.fog.far * area) : null;
+    // el HDRI de fondo tapa al cielo y a la niebla, y se ve solo donde se ve el piso (render y clay)
+    const fondoHdri = !!hdriTex && hdriOpts.background && (modo === 'render' || modo === 'clay');
+    cieloTex = !fondoHdri && vis.sky && P.sky ? cielo(P.sky) : null;
+    scene.background = fondoHdri ? hdriTex : cieloTex ?? bg;
+    scene.backgroundBlurriness = fondoHdri ? hdriOpts.blur : 0;
+    scene.backgroundIntensity = fondoHdri ? hdriOpts.intensity : 1;
+    scene.fog = !fondoHdri && vis.fog && P.fog ? new THREE.Fog(P.sky && vis.sky ? P.sky.bottom : bg, P.fog.near * area, P.fog.far * area) : null;
     sun.castShadow = P.sun.shadows && vis.shadows && Q.shadows;
     if (grid) grid.visible = vis.grid;
     if (floor) floor.visible = vis.floor && (modo === 'render' || modo === 'clay');
   }
 
+  /** Con HDRI, el HDRI ilumina y se refleja; sin él, el entorno de estudio con la intensidad del preset. */
+  function aplicarEntorno() {
+    scene.environment = hdriTex && hdriPmrem ? hdriPmrem.texture : entornoBase;
+    scene.environmentIntensity = hdriTex ? hdriOpts.intensity : P.environment.intensity;
+    const rot = THREE.MathUtils.degToRad(hdriTex ? hdriOpts.rotation : 0);
+    scene.environmentRotation.set(0, rot, 0);
+    scene.backgroundRotation.set(0, rot, 0);
+  }
+
   function aplicarPreset() {
-    scene.environmentIntensity = P.environment.intensity;
+    aplicarEntorno();
     renderer.toneMappingExposure = P.exposure;
 
     hemi.color.set(P.hemisphere.sky); hemi.groundColor.set(P.hemisphere.ground); hemi.intensity = P.hemisphere.intensity;
@@ -256,6 +281,63 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     aplicarBloom(P.bloom);
     aplicarAO(P.ao);
     aplicarModo();
+  }
+
+  // ---------- HDRI ----------
+  function estadoHdri() {
+    return { active: !!hdriTex, source: hdriFuente, ...hdriOpts };
+  }
+
+  function soltarHdri() {
+    hdriPmrem?.dispose();
+    if (hdriPropia) hdriTex?.dispose();
+    hdriTex = null; hdriPmrem = null; hdriPropia = false; hdriFuente = null;
+  }
+
+  /** @param {string} url @param {string} [tipo] @returns {Promise<THREE.Texture>} */
+  async function cargarHdri(url, tipo) {
+    const kind = hdriKind(url, tipo);
+    try {
+      if (kind === 'hdr') return await new (await import('three/addons/loaders/RGBELoader.js')).RGBELoader().loadAsync(url);
+      if (kind === 'exr') return await new (await import('three/addons/loaders/EXRLoader.js')).EXRLoader().loadAsync(url);
+      const t = await new THREE.TextureLoader().loadAsync(url);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    } catch (e) {
+      const msg = String(/** @type {Error} */ (e).message ?? e);
+      const importmap = /module|import|specifier/i.test(msg) ? ' (¿"three/addons/" está en el importmap?)' : '';
+      throw new Error(`no se pudo cargar el HDRI ${url}${importmap}: ${msg}`);
+    }
+  }
+
+  /**
+   * @param {string | THREE.Texture | null | Partial<import('./hdri.js').HdriOptions>} fuente
+   * @param {Partial<import('./hdri.js').HdriOptions> & { type?: string }} [opts]
+   */
+  async function cambiarHdri(fuente, opts) {
+    const pedido = ++hdriPedido;
+    const soloOpciones = !!fuente && typeof fuente === 'object' && !(/** @type {THREE.Texture} */ (fuente).isTexture);
+    if (soloOpciones) { opts = /** @type {any} */ (fuente); fuente = undefined; }
+    // las opciones se validan antes de cargar nada
+    const nuevas = mergeHdri(soloOpciones || fuente === undefined ? hdriOpts : { ...HDRI_DEFAULTS }, opts);
+    if (!fuente && !hdriTex && fuente !== null) throw new Error('no hay un HDRI puesto: pasá la fuente, hdri(url, opciones)');
+    if (fuente === null || fuente === undefined) {
+      if (fuente === null) soltarHdri();
+      hdriOpts = fuente === null ? { ...HDRI_DEFAULTS } : nuevas;
+      aplicarEntorno(); aplicarVisibilidad();
+      return estadoHdri();
+    }
+    if (typeof fuente !== 'string' && !fuente.isTexture) throw new TypeError('hdri(fuente): una URL, una THREE.Texture, null, o solo opciones');
+    const propia = typeof fuente === 'string';
+    const tex = propia ? await cargarHdri(fuente, opts?.type) : /** @type {THREE.Texture} */ (fuente);
+    if (pedido !== hdriPedido) { if (propia) tex.dispose(); return estadoHdri(); }   // llegó otro pedido mientras tanto
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    const env = pmrem.fromEquirectangular(tex);
+    soltarHdri();
+    hdriTex = tex; hdriPmrem = env; hdriPropia = propia; hdriOpts = nuevas;
+    hdriFuente = propia ? fuente : null;
+    aplicarEntorno(); aplicarVisibilidad();
+    return estadoHdri();
   }
 
   /** El radio va en fracción de `area` (como las sombras): 0.03 de un taller de 250 cm son 7,5 cm. @param {Partial<Preset['ao']>} a */
@@ -1071,6 +1153,29 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     get selected() { return [...seleccion.selectedObjects]; },
 
     /**
+     * El entorno HDRI: un panorama equirectangular que ilumina, se refleja en los materiales y
+     * (con `background`) se ve de fondo, en el visor y en el render final.
+     *
+     *   await motor.hdri('galpon.hdr');                          // .hdr, .exr o una imagen equirectangular
+     *   await motor.hdri('galpon.hdr', { blur: 0.2, rotation: 90, intensity: 1.2 });
+     *   await motor.hdri({ rotation: 180 });                     // solo opciones, sobre el que está
+     *   await motor.hdri(null);                                  // volver al entorno de estudio
+     *
+     * La fuente es una URL o una `THREE.Texture` ya cargada (la textura es de la app: el motor no
+     * la suelta). Opciones: `background` (true: se dibuja de fondo), `intensity` (1), `blur` (de 0
+     * a 1, del fondo), `rotation` (grados alrededor de Y) y `type` ('hdr' | 'exr' | 'image'; por
+     * defecto sale de la extensión). Los cargadores vienen de `three/addons/` y se piden recién
+     * acá. Si la carga falla, queda el entorno que había. Sin argumentos, devuelve cómo está.
+     * @param {string | THREE.Texture | null | Partial<import('./hdri.js').HdriOptions>} [fuente]
+     * @param {Partial<import('./hdri.js').HdriOptions> & { type?: string }} [opts]
+     * @returns {Promise<ReturnType<typeof estadoHdri>> | ReturnType<typeof estadoHdri>}
+     */
+    hdri(fuente, opts) {
+      if (fuente === undefined && opts === undefined) return estadoHdri();
+      return cambiarHdri(fuente, opts);
+    },
+
+    /**
      * Prender o apagar partes del estudio sin cambiar de preset: grilla, piso, cielo (degradé de
      * fondo, en vez del color liso), niebla y sombras. Sin argumentos, devuelve cómo está.
      * @param {Partial<{ grid: boolean, floor: boolean, sky: boolean, fog: boolean, shadows: boolean }>} [s]
@@ -1184,7 +1289,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
      * three-gpu-pathtracer la primera vez. `onProgress(fracción, muestras)`; `signal` lo corta.
      * @param {import('./pathtracer.js').RenderOptions} [opts]
      */
-    render(opts) { return pathTrace({ scene, camera: activa, renderer, preset: () => P, samples: Q.renderSamples }, opts); },
+    render(opts) { return pathTrace({ scene, camera: activa, renderer, preset: () => P, samples: Q.renderSamples, hdri: () => (hdriTex ? { texture: hdriTex, intensity: hdriOpts.intensity } : null) }, opts); },
 
     /**
      * En qué placa se está dibujando: { name, vendor, kind, buffer, pixelRatio, maxMSAA, antialias }.
@@ -1263,6 +1368,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       }
       composer.passes.forEach((p) => p.dispose?.());
       Object.values(pisadores).forEach((m) => m.dispose());
+      soltarHdri();
       pmrem.dispose();
       renderer.dispose();
       if (!esCanvas) renderer.domElement.remove();

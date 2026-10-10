@@ -10,6 +10,7 @@ import { classifyGpu, GPU_KIND_TEXT } from '../src/gpu.js';
 import { createAutoScale } from '../src/resolution.js';
 import { QUALITY, CUSTOM_QUALITY, resolveQuality, mergeQuality, qualityName, suggestQuality } from '../src/quality.js';
 import { sinAristas, sinAO, sinRender, sinContorno } from '../src/flags.js';
+import { HDRI_DEFAULTS, hdriKind, mergeHdri } from '../src/hdri.js';
 
 /** n cuadros de `ms` cada uno; devuelve la última escala que cambió (o null). */
 const cuadros = (a, n, ms) => { let c = null; for (let i = 0; i < n; i++) { const r = a.sample(ms); if (r !== null) c = r; } return c; };
@@ -208,4 +209,40 @@ test('la tabla de help() y motor.view coinciden, en las dos direcciones', async 
   assert.ok(api.size > 0);
   for (const n of api) assert.ok(doc.has(n), `view.${n} está en la API pero no en la tabla de help()`);
   for (const n of doc) assert.ok(api.has(n), `view.${n} está en la tabla de help() pero no en la API`);
+});
+
+test('hdriKind: el formato sale de la extensión, sin mirar la query, o se pide', () => {
+  assert.equal(hdriKind('a/galpon.hdr'), 'hdr');
+  assert.equal(hdriKind('a/galpon.HDR?v=2#x'), 'hdr');
+  assert.equal(hdriKind('https://x.org/z.exr'), 'exr');
+  assert.equal(hdriKind('foto.jpg'), 'image');
+  assert.equal(hdriKind('sin-extension'), 'image');
+  assert.equal(hdriKind('blob:http://x/uuid', 'hdr'), 'hdr');
+  assert.throws(() => hdriKind('a.hdr', 'png'), /tipo de HDRI desconocido/);
+});
+
+test('mergeHdri: pisa lo que se dice, valida el rango y no deja pasar un typo', () => {
+  const base = { ...HDRI_DEFAULTS };
+  assert.deepEqual(mergeHdri(base), base);
+  assert.deepEqual(mergeHdri(base, { rotation: 90, blur: 0.5 }), { background: true, intensity: 1, blur: 0.5, rotation: 90 });
+  assert.equal(mergeHdri(base, { background: 0 }).background, false);
+  assert.equal(mergeHdri(base, { intensity: undefined }).intensity, 1);
+  assert.equal(mergeHdri(base, { type: 'exr' }).intensity, 1, 'type es de quien carga, no de cómo se ve');
+  assert.throws(() => mergeHdri(base, { intensidad: 2 }), /opción de HDRI desconocida/);
+  assert.throws(() => mergeHdri(base, { blur: 2 }), /de 0 a 1/);
+  assert.throws(() => mergeHdri(base, { intensity: -1 }), /negativa/);
+  assert.throws(() => mergeHdri(base, { rotation: '90' }), /número/);
+  assert.throws(() => mergeHdri(base, { rotation: NaN }), /número/);
+  assert.throws(() => mergeHdri(base, [1]), /objeto/);
+  assert.equal(base.rotation, 0, 'no toca la base');
+});
+
+test('los HDRI de examples/hdri son Radiance y están en la lista del README de esa carpeta', async () => {
+  const dir = new URL('../examples/hdri/', import.meta.url);
+  const listado = await readFile(new URL('README.md', dir), 'utf8');
+  for (const f of ['empty_warehouse_01', 'carpentry_shop_02', 'glass_passage', 'studio_garden']) {
+    const bytes = await readFile(new URL(`${f}.hdr`, dir));
+    assert.equal(bytes.subarray(0, 10).toString('latin1'), '#?RADIANCE', f);
+    assert.match(listado, new RegExp(f), `${f} no está en examples/hdri/README.md`);
+  }
 });

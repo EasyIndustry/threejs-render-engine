@@ -1,5 +1,29 @@
 # Cambios
 
+## 0.8.0-rc.1 (pre-release)
+
+- **Entorno HDRI** (`motor.hdri`, #11): un panorama equirectangular que ilumina, se refleja en los
+  materiales y se ve de fondo, en el visor y en el render final.
+  `await motor.hdri('galpon.hdr', { background, intensity, blur, rotation })`: la fuente es una URL
+  (`.hdr`, `.exr` o una imagen equirectangular común; el formato sale de la extensión, o se pide con
+  `type`) o una `THREE.Texture` que la app ya tiene (el motor no la suelta). `background` (true) lo
+  dibuja de fondo; `intensity` (1) es cuánto ilumina y brilla; `blur` (de 0 a 1) desenfoca el fondo;
+  `rotation` gira el panorama, en grados alrededor de Y. `motor.hdri({ rotation: 90 })` cambia solo
+  las opciones del que está, `motor.hdri(null)` vuelve al entorno de estudio y `motor.hdri()` dice
+  cómo está (`{ active, source, background, intensity, blur, rotation }`).
+- Los cargadores (`RGBELoader`, `EXRLoader`) vienen de `three/addons/`, que ya está en el importmap,
+  y se piden recién al cargar un HDRI: sin dependencias nuevas. Si la carga falla, queda el entorno
+  que había (la Promise se rechaza); un pedido nuevo cancela al que todavía está cargando.
+- Con un HDRI de fondo no se dibujan el cielo ni la niebla del estudio, y el fondo se ve solo en los
+  modos `render` y `clay` (como el piso). **El piso y la grilla del estudio tapan el panorama**:
+  la app decide si los saca (`motor.show({ floor: false, grid: false })`).
+- `render()` usa el HDRI como entorno (con su rotación, intensidad y fondo) en lugar del degradé
+  `preset.render.sky` / `ground`. Sin HDRI todo se ve exactamente igual que en 0.7.0, y
+  `preset.environment.intensity` sigue mandando sobre el entorno de estudio.
+- Ejemplos: `examples/hdri/` trae cuatro panoramas de 1K (galpón, taller de carpintería, pasaje con
+  plantas y jardín; CC0, de Poly Haven) y `examples/index.html` un selector con giro y desenfoque.
+  Los `.hdr` no van en el paquete de npm, solo en el repo.
+
 ## 0.7.0
 
 - **La cámara, con valores planos** (`motor.view`, #5): la app la mueve sin importar three.

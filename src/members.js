@@ -18,6 +18,7 @@ export const ENGINE_MEMBERS = [
   ['select(objects, { detail? })', 'contorno de selección; detail: además una línea fina por objeto'],
   ['selected', 'lo que está seleccionado'],
   ['show({ grid?, floor?, sky?, fog?, shadows? })', 'prender o apagar partes del estudio sin cambiar de preset; sin argumentos, cómo está'],
+  ['hdri(source?, { background?, intensity?, blur?, rotation?, type? })', "el entorno HDRI: un panorama equirectangular (URL .hdr / .exr / imagen, o una THREE.Texture) que ilumina, se refleja y se ve de fondo, en el visor y en el render final; null lo saca; solo opciones cambia el que está; una Promise del estado; sin argumentos, cómo está"],
   ['edges({ enabled?, normalThreshold?, depthThreshold?, darken? })', 'contorno fino de geometría; sin argumentos, cómo está'],
   ['bloom({ enabled?, strength?, radius?, threshold? })', 'el bloom: lo que pasa de threshold se derrama (emisivos, reflejos fuertes); enabled es de la calidad; sin argumentos, cómo está'],
   ['ao({ enabled?, radius?, intensity?, samples? })', 'oclusión ambiental (GTAO): rincones, uniones y contacto con el piso; radius en fracción de area; enabled y samples son de la calidad; sin argumentos, cómo está'],
