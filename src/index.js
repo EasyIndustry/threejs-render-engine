@@ -671,8 +671,10 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     if (e.pointerType === 'touch') {
       if (punteros.size >= 2) return;
       const accion = punteros.size === 0 ? entrada.scheme.touch[1] : entrada.scheme.touch[2];
-      if (!accion) return;
+      // el dedo se anota aunque su gesto sea de la app: si no, el segundo dedo cree que es el
+      // primero y nunca llega a pellizcar
       punteros.set(e.pointerId, p);
+      if (!accion) { gesto = null; return; }
       gesto = { action: accion };
     } else {
       if (gesto) return; // ya hay un gesto con otro botón

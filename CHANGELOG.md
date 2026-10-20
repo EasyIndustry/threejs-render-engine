@@ -1,5 +1,12 @@
 # Cambios
 
+## 0.8.0-rc.2 (pre-release)
+
+- Arreglo en táctil: con `touch: { 1: null, 2: 'pan-zoom' }` (un dedo para la app, dos para la
+  cámara) el pellizco nunca llegaba, porque el primer dedo no se anotaba y el segundo se tomaba
+  como primero. Ahora cada dedo se anota aunque su gesto sea de la app, así dos dedos desplazan y
+  acercan igual que siempre.
+
 ## 0.8.0-rc.1 (pre-release)
 
 - **Entorno HDRI** (`motor.hdri`, #11): un panorama equirectangular que ilumina, se refleja en los
