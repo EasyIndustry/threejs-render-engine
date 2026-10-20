@@ -1,5 +1,15 @@
 # Cambios
 
+## 0.8.0-rc.2 (pre-release)
+
+- **Arreglo: el recorte por alfa en las pasadas auxiliares** (#12). Una malla con `alphaTest` y una
+  `map` o `alphaMap` (un sprite, un árbol en tarjeta, una chapa perforada) dejaba un rectángulo en
+  las aristas, la AO y el contorno de selección: esas pasadas dibujan la escena con un material
+  propio y no miraban el recorte. Ahora le dan a cada malla recortada una variante de su material
+  que descarta donde el alfa (`map.a × alphaMap.g`, con la transformación de UV de cada textura)
+  no llega a `alphaTest`. Los modos `clay`, `normals`, `matcap` y `wireframe` también lo respetan.
+  Sin nada recortado en la escena, las pasadas corren igual que antes (`src/recorte.js`).
+
 ## 0.8.0-rc.1 (pre-release)
 
 - **Entorno HDRI** (`motor.hdri`, #11): un panorama equirectangular que ilumina, se refleja en los

@@ -114,6 +114,10 @@ shader propio (el path tracer no los entiende: un espejo, ahí, es un material e
 así cada uno cuesta un render extra por cuadro y no uno por pasada. La luz hemisférica no existe para el
 path tracer: ese relleno lo da un entorno degradé (`preset.render.sky` / `ground`).
 
+Lo recortado por alfa (`alphaTest` con `map` o `alphaMap`: sprites, árboles en tarjetas, chapa
+perforada) deja su figura, no el quad, en las aristas, la oclusión ambiental, el contorno de
+selección y los modos de vista.
+
 **Un lugar de fondo (HDRI).** `await motor.hdri('galpon.hdr', { rotation: 90, blur: 0.1 })` pone un
 panorama equirectangular que ilumina y se refleja en los materiales (y entra al render final); con
 `{ background: false }` solo ilumina. `motor.hdri({ rotation: 180 })` cambia las opciones del que está,

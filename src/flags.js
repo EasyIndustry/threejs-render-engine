@@ -4,6 +4,9 @@
 //   userData.noAO       no entra en la oclusión ambiental
 //   userData.noRender   no sale en el render final (path tracing)
 //
+// Un material con `alphaTest` y una `map` o `alphaMap` recorta por alfa: las pasadas auxiliares
+// y los modos de vista dibujan su figura, no el quad entero (ver recorte.js).
+//
 // Un espejo (`Reflector` de three, `isReflector`) dibuja la escena reflejada en su
 // onBeforeRender, o sea en CADA render que lo incluye: en las pasadas auxiliares (aristas, AO,
 // contornos de selección) se lo deja afuera solo, así cuesta un render extra por cuadro y no uno
@@ -32,4 +35,13 @@ export function sinRender(o) {
   if (o.userData.noRender || o.isReflector || o.isLine || o.isPoints || o.isSprite) return true;
   if (!o.isMesh) return false;
   return Array.isArray(o.material) ? o.material.some(deShader) : deShader(o.material);
+}
+
+/** El material del que salió una variante de recorte (recorte.js), o él mismo. @param {any} m */
+export const origenDelRecorte = (m) => m?.userData?.recorteDe ?? m;
+
+/** ¿El material recorta por alfa? (o lo recortaba, si es una variante). @param {any} m */
+export function conRecorte(m) {
+  const o = origenDelRecorte(m);
+  return !!o && o.alphaTest > 0 && !!(o.map || o.alphaMap);
 }

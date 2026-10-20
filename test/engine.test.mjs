@@ -9,7 +9,7 @@ import { memberNames } from '../src/help.js';
 import { classifyGpu, GPU_KIND_TEXT } from '../src/gpu.js';
 import { createAutoScale } from '../src/resolution.js';
 import { QUALITY, CUSTOM_QUALITY, resolveQuality, mergeQuality, qualityName, suggestQuality } from '../src/quality.js';
-import { sinAristas, sinAO, sinRender, sinContorno } from '../src/flags.js';
+import { sinAristas, sinAO, sinRender, sinContorno, conRecorte } from '../src/flags.js';
 import { HDRI_DEFAULTS, hdriKind, mergeHdri } from '../src/hdri.js';
 
 /** n cuadros de `ms` cada uno; devuelve la última escala que cambió (o null). */
@@ -245,4 +245,15 @@ test('los HDRI de examples/hdri son Radiance y están en la lista del README de 
     assert.equal(bytes.subarray(0, 10).toString('latin1'), '#?RADIANCE', f);
     assert.match(listado, new RegExp(f), `${f} no está en examples/hdri/README.md`);
   }
+});
+
+test('recorte por alfa: alphaTest con map o alphaMap; una variante sigue a su origen (#12)', () => {
+  const tex = {};
+  assert.equal(conRecorte({ alphaTest: 0.5, map: tex }), true);
+  assert.equal(conRecorte({ alphaTest: 0.5, alphaMap: tex }), true);
+  assert.equal(conRecorte({ alphaTest: 0, map: tex }), false);
+  assert.equal(conRecorte({ alphaTest: 0.5 }), false);
+  assert.equal(conRecorte(null), false);
+  // la variante (clay, normales) no tiene alphaTest propio: cuenta el del material del que sale
+  assert.equal(conRecorte({ alphaTest: 0, userData: { recorteDe: { alphaTest: 0.3, map: tex } } }), true);
 });

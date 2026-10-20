@@ -30,6 +30,7 @@ import { ENGINE_MEMBERS } from './members.js';
 import { sinAO, sinContorno } from './flags.js';
 import { HDRI_DEFAULTS, hdriKind, mergeHdri } from './hdri.js';
 import * as V from './view.js';
+import { respetarRecorte, conRecorte, variante } from './recorte.js';
 import * as G from './gestures.js';
 import { SCHEMES, KEYS } from './gestures.js';
 import { VIEWS } from './view.js';
@@ -165,8 +166,11 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   // GTAO vuelve a dibujar la escena (normales y profundidad): lo marcado con noAO y los espejos
   // se esconden mientras tanto, o un espejo dibujaría su reflejo una vez más por cuadro
   escondiendo(aoPass, sinAO);
+  // lo recortado por alfa (alphaTest) deja su figura en la AO, no el quad entero
+  respetarRecorte(aoPass, scene);
   composer.addPass(aoPass);
   const edgePass = createEdgePass(renderer, scene, camera);
+  respetarRecorte(edgePass, scene);
   composer.addPass(edgePass);
   // bloom: lo que pasa de `threshold` (en lineal: un emisivo con intensidad > 1, un reflejo del
   // sol) se derrama alrededor. Antes de los contornos, para que la selección no brille.
@@ -189,6 +193,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     o.overlayMaterial.blendEquation = THREE.AddEquation;
     // la máscara y la profundidad del contorno vuelven a dibujar la escena: sin los espejos
     escondiendo(o, sinContorno);
+    respetarRecorte(o, scene);
     if (activa !== camera) contornoPara(o);
     return o;
   }
@@ -390,7 +395,9 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       const m = /** @type {THREE.Mesh} */ (o);
       if (!m.isMesh || o.parent === estudio) return;
       cambiados.push([m, m.material]);
-      m.material = pisador;
+      // lo recortado por alfa sigue recortado en clay, normales, matcap y alambre
+      const mat = m.material;
+      m.material = Array.isArray(mat) ? mat.map((x) => (conRecorte(x) ? variante(pisador, x) : pisador)) : conRecorte(mat) ? variante(pisador, mat) : pisador;
     });
     try { dibujar(); } finally { for (const [m, mat] of cambiados) m.material = mat; }
   }
