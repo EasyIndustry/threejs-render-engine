@@ -182,7 +182,7 @@ test('espejos y materiales de shader: fuera de las pasadas auxiliares y del rend
 });
 
 test('lo puro no importa three ni el DOM', async () => {
-  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js', 'quality.js', 'flags.js', 'view.js', 'gestures.js']) {
+  for (const f of ['presets.js', 'help.js', 'members.js', 'gpu.js', 'resolution.js', 'quality.js', 'flags.js', 'view.js', 'gestures.js', 'pixel.js']) {
     const s = await fuente(f);
     assert.doesNotMatch(s, /^import .* from 'three/m, f);
     assert.doesNotMatch(s, /\b(document|window)\./, f);

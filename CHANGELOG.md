@@ -9,6 +9,21 @@
   que descarta donde el alfa (`map.a × alphaMap.g`, con la transformación de UV de cada textura)
   no llega a `alphaTest`. Los modos `clay`, `normals`, `matcap` y `wireframe` también lo respetan.
   Sin nada recortado en la escena, las pasadas corren igual que antes (`src/recorte.js`).
+- **Look pixelado** (`motor.pixelate`, #13): la escena con píxeles grandes y nítidos.
+  `motor.pixelate({ enabled, size, snap })`, con valores por defecto en el preset (sección
+  `pixelate`: apagado, `size` 3, `snap` true). El post-proceso dibuja en un buffer de un píxel
+  grande por cada `size` píxeles de pantalla (redondeado a entero con el pixelRatio) y un pase
+  final lo amplía con cuentas enteras: todos los píxeles grandes miden lo mismo, sea cual sea el
+  tamaño de la ventana. Con `snap`, la cámara se corre a la grilla de píxeles grandes solo para
+  dibujar (el estado de `view` no cambia) y el ampliado devuelve lo que sobra, de a píxeles
+  enteros: los bordes no titilan al desplazar. Es exacto en ortográfica; en perspectiva, para lo
+  que está en el plano del objetivo; girar la cámara sigue titilando, como en cualquier juego
+  pixelado. Mientras está prendido, `resolution()` (también la automática) queda en pausa y vuelve
+  al apagarlo. El overlay se dibuja nítido encima, `snapshot()` sale pixelado y `render()` no
+  cambia. Para bordes duros, sin suavizar dentro del píxel grande: `quality({ antialias: 0 })`.
+  La matemática es pura (`src/pixel.js`), con su prueba en Node.
+- **Arreglo:** un `snapshot()` justo después de pasar a ortográfica, sin un cuadro en el medio,
+  salía tapado por la niebla (se corría solo en el loop).
 
 ## 0.8.0-rc.1 (pre-release)
 

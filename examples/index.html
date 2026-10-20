@@ -38,6 +38,7 @@
     <select id="vista"></select>
     <button id="encuadrar">encuadrar</button>
     <button id="proyeccion">ortográfica</button>
+    <button id="pixelado">pixelado</button>
     <select id="esquema"></select>
     <select id="entorno"></select>
     <button id="fondo">fondo HDRI</button>
@@ -97,6 +98,7 @@
       motor.view.projection(orto ? 'orthographic' : 'perspective');
       e.currentTarget.textContent = orto ? 'perspectiva' : 'ortográfica';
     };
+    document.getElementById('pixelado').onclick = () => motor.pixelate({ enabled: !motor.pixelate().enabled });
     const esquema = document.getElementById('esquema');
     esquema.innerHTML = Object.keys(motor.SCHEMES).map((s) => `<option>${s}</option>`).join('');
     esquema.onchange = () => motor.view.input({ scheme: esquema.value, zoomToCursor: esquema.value !== 'three' });

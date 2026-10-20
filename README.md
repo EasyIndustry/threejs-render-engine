@@ -114,6 +114,11 @@ shader propio (el path tracer no los entiende: un espejo, ahí, es un material e
 así cada uno cuesta un render extra por cuadro y no uno por pasada. La luz hemisférica no existe para el
 path tracer: ese relleno lo da un entorno degradé (`preset.render.sky` / `ground`).
 
+**Look pixelado.** `motor.pixelate({ enabled: true, size: 3 })` dibuja la escena con píxeles
+grandes y nítidos de `size` píxeles de pantalla, todos del mismo tamaño; con `snap` (por defecto)
+la cámara se mueve de a píxeles grandes y los bordes no titilan al desplazar. El overlay queda
+nítido encima; `resolution()` se pausa mientras tanto.
+
 Lo recortado por alfa (`alphaTest` con `map` o `alphaMap`: sprites, árboles en tarjetas, chapa
 perforada) deja su figura, no el quad, en las aristas, la oclusión ambiental, el contorno de
 selección y los modos de vista.

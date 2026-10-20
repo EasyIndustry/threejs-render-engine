@@ -17,6 +17,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutlinePass } from 'three/addons/postprocessing/OutlinePass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { PRESETS, resolvePreset, mergePreset, definePreset } from './presets.js';
@@ -30,6 +31,7 @@ import { ENGINE_MEMBERS } from './members.js';
 import { sinAO, sinContorno } from './flags.js';
 import { HDRI_DEFAULTS, hdriKind, mergeHdri } from './hdri.js';
 import * as V from './view.js';
+import { pixelSize, pixelGrid, snapToGrid, pixelOptions } from './pixel.js';
 import { respetarRecorte, conRecorte, variante } from './recorte.js';
 import * as G from './gestures.js';
 import { SCHEMES, KEYS } from './gestures.js';
@@ -202,6 +204,22 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   /** Un contorno angosto por objeto: marca las costuras entre piezas que se tocan. @type {OutlinePass[]} */
   const detalles = [];
   composer.addPass(new OutputPass());
+  // el look pixelado (pixelate): el post-proceso dibuja en un buffer chico y este pase lo amplía a
+  // píxeles enteros (cada píxel de la pantalla va al píxel del buffer que le toca, con cuentas
+  // enteras: ver pixel.js). Apagado, el OutputPass es el último y dibuja en la pantalla.
+  const ampliar = new ShaderPass({
+    uniforms: { tDiffuse: { value: null }, k: { value: 1 }, buf: { value: new THREE.Vector2(1, 1) }, off: { value: new THREE.Vector2() }, alto: { value: 1 } },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tDiffuse; uniform float k; uniform vec2 buf; uniform vec2 off; uniform float alto;
+      void main() {
+        float x = floor(gl_FragCoord.x), yTop = alto - 1.0 - floor(gl_FragCoord.y);
+        vec2 t = floor((vec2(x, yTop) + k + off) / k);
+        gl_FragColor = texture2D(tDiffuse, vec2((t.x + 0.5) / buf.x, 1.0 - (t.y + 0.5) / buf.y));
+      }`,
+  });
+  ampliar.enabled = false;
+  composer.addPass(ampliar);
 
   // ---------- preset ----------
   /** @type {Preset} */ let P = resolvePreset(preset);
@@ -286,6 +304,7 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     aplicarBloom(P.bloom);
     aplicarAO(P.ao);
     aplicarModo();
+    aplicarPixel();
   }
 
   // ---------- HDRI ----------
@@ -411,10 +430,19 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     const gl = renderer.getContext();
     return { width, height, pixelRatio: renderer.getPixelRatio(), drawingWidth: gl.drawingBufferWidth, drawingHeight: gl.drawingBufferHeight };
   }
+  /** ¿Está prendido el look pixelado? (pixelate) */
+  let pixelado = false;
+  /** El buffer chico para una pantalla de w × h (CSS) a ese pixelRatio. @param {number} w @param {number} h @param {number} pr */
+  const rejilla = (w, h, pr) => pixelGrid(Math.round(w * pr), Math.round(h * pr), pixelSize(P.pixelate.size, pr));
+  /** El tamaño del post-proceso: el del visor, o el buffer chico si está pixelado. @param {number} w @param {number} h @param {number} pr */
+  function dimensionar(w, h, pr) {
+    if (pixelado) { const g = rejilla(w, h, pr); composer.setPixelRatio(1); composer.setSize(g.bufW, g.bufH); }
+    else { composer.setPixelRatio(pr); composer.setSize(w, h); }
+  }
   function ajustar() {
     const [w, h] = medida();
     renderer.setSize(w, h, !esCanvas);
-    composer.setSize(w, h);
+    dimensionar(w, h, renderer.getPixelRatio());
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     if (activa === orto) ajustarOrto(distanciaOrto);
@@ -429,10 +457,55 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
   /** @param {number} s */
   function aplicarEscala(s) {
     escala = s;
-    const pr = prBase * s;
-    renderer.setPixelRatio(pr);
-    composer.setPixelRatio(pr);
+    // pixelado, la resolución queda en pausa: el tamaño del píxel manda
+    renderer.setPixelRatio(pixelado ? prBase : prBase * s);
     ajustar();
+  }
+  /** La resolución automática, en pausa mientras está pixelado. @type {ReturnType<typeof createAutoScale> | null} */
+  let autoPausado = null;
+  /** El tamaño de píxel con el que está dimensionado el post-proceso (para no redimensionar de más). */
+  let sizeAplicado = 0;
+  function aplicarPixel() {
+    const quiere = !!P.pixelate.enabled;
+    // un tweak o un setPreset que no toca el pixelado no redimensiona nada (ni avisa onResize)
+    if (quiere === pixelado && (!pixelado || sizeAplicado === P.pixelate.size)) return;
+    if (quiere !== pixelado) {
+      pixelado = quiere;
+      if (pixelado) { autoPausado = auto; auto = null; }
+      else { auto = autoPausado; autoPausado = null; }
+      ampliar.enabled = pixelado;
+    }
+    sizeAplicado = pixelado ? P.pixelate.size : 0;
+    aplicarEscala(escala);
+  }
+  /**
+   * Dibuja el cuadro: tal cual, o pixelado. Pixelado, la cámara cubre el buffer chico (con un
+   * píxel grande de margen) y, con snap, se corre a la grilla solo para dibujar: lo que se movió
+   * lo devuelve el ampliado. El estado de la cámara (view.get) no cambia.
+   * @param {number} w @param {number} h @param {number} pr el visor en CSS y su pixelRatio
+   */
+  function dibujar(w, h, pr) {
+    // acá y no en el loop: un snapshot() justo después de pasar a ortográfica también la necesita
+    ajustarNiebla();
+    if (!pixelado) return conModo(() => composer.render());
+    const g = rejilla(w, h, pr);
+    const c = activa;
+    /** @type {[number, number, number]} */ let delta = [0, 0, 0];
+    /** @type {[number, number]} */ let offset = [0, 0];
+    if (P.pixelate.snap) {
+      const s = leer();
+      ({ delta, offset } = snapToGrid(s, V.worldPerPixel(s, s.target, g.view.fullHeight) * g.k, g.k));
+    }
+    const u = ampliar.uniforms;
+    // de a píxeles enteros: así dos cuadros con la cámara en el mismo punto de la grilla dan la
+    // misma imagen corrida, sin que cambie el borde de ningún bloque (el error es de medio píxel)
+    u.k.value = g.k; u.buf.value.set(g.bufW, g.bufH); u.off.value.set(Math.round(offset[0]), Math.round(offset[1])); u.alto.value = g.view.fullHeight;
+    c.position.x += delta[0]; c.position.y += delta[1]; c.position.z += delta[2];
+    c.setViewOffset(g.view.fullWidth, g.view.fullHeight, g.view.x, g.view.y, g.view.width, g.view.height);
+    try { conModo(() => composer.render()); } finally {
+      c.position.x -= delta[0]; c.position.y -= delta[1]; c.position.z -= delta[2];
+      c.clearViewOffset();
+    }
   }
 
   // ---------- el cuadro ----------
@@ -443,9 +516,8 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
     const dt = reloj.getDelta();
     if (auto) { const n = auto.sample(dt * 1000); if (n !== null) aplicarEscala(n); }
     pasoVista(dt);
-    ajustarNiebla();
     for (const fn of alCuadro) fn(dt);
-    conModo(() => composer.render());
+    dibujar(...medida(), renderer.getPixelRatio());
     if (overlay.children.length) {
       renderer.autoClear = false;
       renderer.clearDepth();
@@ -1278,15 +1350,13 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
       try {
         renderer.setPixelRatio(1);
         renderer.setSize(W, H, false);
-        composer.setPixelRatio(1);
-        composer.setSize(W, H);
+        dimensionar(W, H, 1);
         camera.aspect = W / H; camera.updateProjectionMatrix();
         if (activa === orto) ajustarOrto(distanciaOrto);
-        conModo(() => composer.render());
+        dibujar(W, H, 1);
         return renderer.domElement.toDataURL(type, quality);
       } finally {
         renderer.setPixelRatio(prev);
-        composer.setPixelRatio(prev);
         ajustar();
       }
     },
@@ -1334,19 +1404,32 @@ export function createEngine(target, { preset = 'studio', area = 250, fov = 38, 
      * @param {number | 'auto'} [value] @param {import('./resolution.js').AutoOptions} [opts]
      */
     resolution(value, opts = {}) {
+      // pixelado, se guarda y vale al apagar pixelate
       if (value === 'auto') {
-        auto = createAutoScale({ ...opts, start: escala });
-        aplicarEscala(auto.scale);
+        const a = createAutoScale({ ...opts, start: escala });
+        if (pixelado) { autoPausado = a; escala = a.scale; } else { auto = a; aplicarEscala(a.scale); }
       } else if (value !== undefined) {
         if (typeof value !== 'number' || !(value >= 0.1 && value <= 2)) throw new RangeError(`resolución inválida: ${String(value)} (va un número entre 0.1 y 2, o 'auto')`);
-        auto = null;
-        aplicarEscala(value);
+        if (pixelado) { autoPausado = null; escala = value; } else { auto = null; aplicarEscala(value); }
       }
       const gl = renderer.getContext();
       return Object.freeze({
         mode: auto ? 'auto' : 'fixed', scale: escala, pixelRatio: +renderer.getPixelRatio().toFixed(3),
         buffer: `${gl.drawingBufferWidth}x${gl.drawingBufferHeight}`, ...(auto ? auto.options : {}),
       });
+    },
+
+    /**
+     * El look pixelado: la escena con píxeles grandes y nítidos de `size` píxeles de pantalla
+     * (entero), ampliados sin suavizar. `snap` corre la cámara a la grilla de esos píxeles para que
+     * los bordes no titilen al moverla: exacto en ortográfica; en perspectiva, para lo que está en
+     * el plano del objetivo. Mientras está prendido, resolution() queda en pausa. El overlay se
+     * dibuja nítido encima; snapshot() sale pixelado; render() no cambia. Sin argumentos, cómo está.
+     * @param {Partial<Preset['pixelate']>} [p]
+     */
+    pixelate(p) {
+      if (p) { P = mergePreset(P, { pixelate: pixelOptions(p) }); aplicarPixel(); }
+      return { ...P.pixelate };
     },
 
     /** Algo que corre en cada cuadro, antes de dibujar (etiquetas, animaciones). Devuelve cómo sacarlo. @param {(dt: number) => void} fn */
